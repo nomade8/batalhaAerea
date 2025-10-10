@@ -13,7 +13,7 @@
             transform: translateX(-50%);
             width: 300px;
             
-            color: white;
+            color: rgb(2, 247, 43);
             font-size: 14px;
             background: rgba(0,0,0,0.7);
             padding: 12px 14px;
@@ -26,8 +26,7 @@
         #hud .hud-label { opacity: 0.9; width: 95px; }
         #hud .hud-bar { flex: 1; height: 10px; background: rgba(255,255,255,0.15); border-radius: 8px; overflow: hidden; }
         #hud .hud-fill { height: 100%; width: 0%; border-radius: 8px; box-shadow: 0 0 6px rgba(0,0,0,0.2); transition: width 0.12s ease-out; }
-        #hud #hud-speed-fill { background: linear-gradient(90deg, #3af, #0ff); box-shadow: 0 0 6px rgba(0,255,255,0.5); }
-        #hud #hud-altitude-fill { background: linear-gradient(90deg, #fa3, #fd5); box-shadow: 0 0 6px rgba(255,180,0,0.5); }
+        #hud .hud-value { opacity: 0.9; font-weight: 600; }
         #hud #hud-fuel-fill { background: linear-gradient(90deg, #6f6, #1f1); box-shadow: 0 0 6px rgba(0,255,0,0.5); }
         #crosshair {
             position: absolute;
@@ -47,7 +46,7 @@
         #crosshair::before, #crosshair::after {
             content: '';
             position: absolute;
-            background: white;
+            background: rgb(124, 123, 123);
         }
         #crosshair::before {
             left: 50%;
@@ -125,7 +124,7 @@
         minimapScene = new THREE.Scene();
         // minimapScene.background = new THREE.Color(0xffffff); // Removido para permitir fundo transparente via CSS
 
-        minimapCamera = new THREE.OrthographicCamera(-500, 500, 500, -500, 1, 1000); // Aumentado para cobrir uma área maior
+        minimapCamera = new THREE.OrthographicCamera(-1000, 1000, 1000, -1000, 1, 1000); // Aumentado para cobrir uma área maior
         minimapCamera.position.set(0, 250, 0);
         minimapCamera.rotation.x = -Math.PI / 2; // Vista de topo
 
@@ -440,11 +439,11 @@ function createClouds() {
             <div class="hud-heading">Direção: <span id="hud-heading-value">0°</span></div>
             <div class="hud-item">
                 <div class="hud-label">Velocidade</div>
-                <div class="hud-bar"><div id="hud-speed-fill" class="hud-fill"></div></div>
+                <div class="hud-value"><span id="hud-speed-value">0</span> km/h</div>
             </div>
             <div class="hud-item">
                 <div class="hud-label">Altitude</div>
-                <div class="hud-bar"><div id="hud-altitude-fill" class="hud-fill"></div></div>
+                <div class="hud-value"><span id="hud-altitude-value">0</span> m</div>
             </div>
             <div class="hud-item">
                 <div class="hud-label">Combustível</div>
@@ -452,8 +451,8 @@ function createClouds() {
             </div>
         `;
         const hudHeadingValue = document.getElementById('hud-heading-value');
-        const hudSpeedFill = document.getElementById('hud-speed-fill');
-        const hudAltitudeFill = document.getElementById('hud-altitude-fill');
+        const hudSpeedValue = document.getElementById('hud-speed-value');
+            const hudAltitudeValue = document.getElementById('hud-altitude-value');
         const hudFuelFill = document.getElementById('hud-fuel-fill');
 
         // Variáveis para suavização (estas serão substituídas pela lógica do planeState)
@@ -599,7 +598,7 @@ function createClouds() {
             });
             const flash = new THREE.Sprite(flashMat);
             flash.position.copy(base);
-            flash.scale.setScalar(2.2 * scale);
+            flash.scale.setScalar(2.8 * scale);
             flash.userData = {
                 birth: nowBirth,
                 duration: 220,
@@ -614,8 +613,8 @@ function createClouds() {
             // Puffs de fogo/fumaça (poucos meshes para manter leve)
             const puffCount = 6 + Math.floor(Math.random() * 3); // 6-8 puffs
             for (let i = 0; i < puffCount; i++) {
-                const size = (0.4 + Math.random() * 0.5) * scale;
-                const geo = new THREE.SphereGeometry(size * 1.4, 12, 12);
+                const size = (0.3 + Math.random() * 0.4) * scale;
+                const geo = new THREE.SphereGeometry(size * 1.2, 12, 12);
                 const hue = 0.08 + Math.random() * 0.06; // tons alaranjados
                 const color = new THREE.Color().setHSL(hue, 0.9, 0.5);
                 const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
@@ -628,7 +627,7 @@ function createClouds() {
                 puff.position.copy(base).add(offset);
                 puff.userData = {
                     birth: nowBirth,
-                    duration: 800 + Math.random() * 400,
+                    duration: 100 + Math.random() * 400,
                     scaleBase: 0.8,
                     scaleGrowth: 3.2 + Math.random() * 1.4,
                     opacityStart: 1,
@@ -1176,7 +1175,7 @@ function createClouds() {
                 const maxPitch = 0.8; // Maximum pitch angle
                 const lerpFactorRotation = 0.02; // Fator de interpolação para rotação
                 const lerpFactorPitch = 0.1;   // Fator de interpolação para inclinação
-                const maxRoll = 1.2;
+                const maxRoll = 1.4;
                 const rollLerpFactor = 0.03;
 
                 let targetRoll = 0;
@@ -1301,7 +1300,7 @@ function createClouds() {
                             enemy.userData.waypoint = null;
 
                             // Explosão um pouco maior no tiro fatal (mesmo efeito, escalado)
-                            createExplosion(enemy.position, 1.8);
+                            createExplosion(enemy.position, 2.4);
                         }
                         // remover projétil
                         scene.remove(b);
@@ -1322,13 +1321,8 @@ function createClouds() {
             hudHeadingValue.textContent = `${heading.toFixed(0)}°`;
 
             // Velocidade: normalizar de 0 (parado) a 1 (máximo) considerando speed em [-100..0]
-            const speedFraction = THREE.MathUtils.clamp(-planeState.speed / 100, 0, 1);
-            hudSpeedFill.style.width = `${(speedFraction * 100).toFixed(0)}%`;
-
-            // Altitude: normalizar até um teto visual (ex.: 400 unidades)
-            const altitudeMax = 400;
-            const altFraction = THREE.MathUtils.clamp(planeState.altitude / altitudeMax, 0, 1);
-            hudAltitudeFill.style.width = `${(altFraction * 100).toFixed(0)}%`;
+            hudSpeedValue.textContent = `${Math.round(-planeState.speed * 10)}`
+            hudAltitudeValue.textContent = `${Math.round(planeState.altitude)}`;
 
             // Combustível: 0..100
             const fuelFraction = THREE.MathUtils.clamp(planeState.fuel / 100, 0, 1);
