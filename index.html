@@ -768,7 +768,7 @@ function createClouds() {
             // Lógica de aumento/diminuição de velocidade (corrigida)
             const maxSpeed = -100; // Limite de velocidade máxima
             const minSpeed = 0;  // Limite de velocidade mínima
-            const lerpFactorSpeed = 0.005; // Fator de interpolação para velocidade
+            const lerpFactorSpeed = 0.01; // Fator de interpolação para velocidade (ajustado para uma resposta mais suave)
 
             if (planeState.isSpeedingUp) {
                 planeState.speed = THREE.MathUtils.lerp(planeState.speed, maxSpeed, lerpFactorSpeed);
@@ -1138,7 +1138,7 @@ function createClouds() {
                 const pitchScale = (ud.role === 'pursuit' && distCloseYaw < minSepYaw)
                     ? THREE.MathUtils.clamp(distCloseYaw / minSepYaw, 0.6, 1)
                     : 1;
-                const targetPitch = THREE.MathUtils.clamp((-errorAlt * 0.008 + yawError * 0.06) * pitchScale, -maxPitch, maxPitch);
+                const targetPitch = THREE.MathUtils.clamp((errorAlt * 0.008 + yawError * 0.06) * pitchScale, -maxPitch, maxPitch);
                 enemy.rotation.x = THREE.MathUtils.lerp(enemy.rotation.x || 0, targetPitch, 0.06);
 
                 // Evitar sair dos limites: se perto das bordas, escolher waypoint voltado ao centro
@@ -1321,7 +1321,7 @@ function createClouds() {
             hudHeadingValue.textContent = `${heading.toFixed(0)}°`;
 
             // Velocidade: normalizar de 0 (parado) a 1 (máximo) considerando speed em [-100..0]
-            hudSpeedValue.textContent = `${Math.round(-planeState.speed * 10)}`
+            hudSpeedValue.textContent = `${(-planeState.speed * 10).toFixed(1)}`
             hudAltitudeValue.textContent = `${Math.round(planeState.altitude)}`;
 
             // Combustível: 0..100
