@@ -88,7 +88,7 @@
         scene.add(ambientLight);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
-        camera.position.set(0, 0.9, 1.2); // Posição da câmera relativa ao avião (atrás e acima)
+        camera.position.set(0, 0.9, 1.05); // Posição da câmera relativa ao avião (atrás e acima)
         camera.lookAt(0, 0, -15); // A câmera deve olhar para a frente do avião
        
         
@@ -360,7 +360,7 @@ function createClouds() {
             airplane = gltf.scene;
             airplane.scale.set(1, 1, 1); // Ajuste se necessário
             // Posicionar o modelo para que o cockpit fique centrado na câmera (ajuste baseado no modelo)
-            airplane.position.set(0, 105, 750); // Posição inicial do avião no mundo, ajustada para 5 unidades acima do terreno
+            airplane.position.set(0, 200, 750); // Posição inicial do avião no mundo, ajustada para 5 unidades acima do terreno
             scene.add(airplane);
             // airplane.rotation.y = Math.PI; // Removido: Gira o avião 180 graus para que a frente fique para longe da câmera
             airplane.add(camera); // Adicionado: Câmera como filho do avião
@@ -406,7 +406,17 @@ function createClouds() {
                 loadEnemyAirplane(randomCornerSpawn()),
                 loadEnemyAirplane(randomCornerSpawn())
             ]).then(() => {
-    
+                // Definir três inimigos como perseguidores do jogador
+                const pursuers = enemyAirplanes.slice(0, 3);
+                pursuers.forEach((e) => {
+                    if (!e || !e.userData) return;
+                    e.userData.role = 'pursuit';
+                    e.userData.turnRate = (e.userData.turnRate || 0.6) * 1.4; // virar mais rápido
+                    e.userData.maxBank = Math.max(e.userData.maxBank || 0.5, 0.9); // inclinar mais
+                    e.userData.maxClimbRate = Math.max(e.userData.maxClimbRate || 20, 35); // subir/mergulhar mais
+                    e.userData.bankLerp = Math.max(e.userData.bankLerp || 0.05, 0.12);
+                    e.userData.maxPitch = 0.7; // nariz mais agressivo
+                });
             }).catch(error => {
                 console.error('Erro ao carregar aviões inimigos:', error);
             });
@@ -510,14 +520,16 @@ function createClouds() {
                     enemyAirplane.rotation.y = desiredYaw;
                     enemyAirplane.userData = {
                         speed: 40 + Math.random() * 30, // unidades/segundo
-                        turnRate: 0.5 + Math.random() * 0.6, // rad/s
+                        turnRate: 0.6 + Math.random() * 0.7, // rad/s (mais agressivo)
                         nextChangeAt: performance.now() + 2000 + Math.random() * 3000,
                         targetAltitude: position.y,
                         verticalSpeed: 0,
-                        maxClimbRate: 25, // unidades/segundo
+                        maxClimbRate: 28, // unidades/segundo
                         waypoint: initialWaypoint,
-                        maxBank: 0.3 + Math.random() * 0.3,
-                        bankLerp: 0.04,
+                        maxBank: 0.5 + Math.random() * 0.4,
+                        bankLerp: 0.08,
+                        maxPitch: 0.5,
+                        role: 'random',
                         hp: THREE.MathUtils.randInt(2, 4), // impactos para morrer
                         dying: false,
                         spinSpeed: 0
@@ -696,7 +708,7 @@ function createClouds() {
 
         const planeState = {
             speed: -18, // Velocidade inicial
-            altitude: 200, // Altitude inicial
+            altitude: 1000, // Altitude inicial
             fuel: 100, // Combustível inicial
             rotation: 0, // Rotação Y (yaw)
             pitch: 0, // Rotação X (pitch)
@@ -1028,13 +1040,38 @@ function createClouds() {
                 return; // pular lógica de voo normal
 
                 }
-                // Definir novo waypoint por tempo ou proximidade
-                const waypoint = ud.waypoint || randomWaypointWithinBounds();
-                const distToWaypoint = enemy.position.distanceTo(waypoint);
-                if (!ud.nextChangeAt || nowTime > ud.nextChangeAt || distToWaypoint < 60) {
-                    ud.waypoint = randomWaypointWithinBounds();
-                    ud.targetAltitude = ud.waypoint.y;
-                    ud.nextChangeAt = nowTime + 2000 + Math.random() * 4000;
+                // Papel do inimigo: perseguir jogador ou comportamento aleatório
+                const playerPos = airplane.position.clone();
+                const playerForward = new THREE.Vector3(0, 0, -1).applyQuaternion(airplane.quaternion);
+                let waypoint = ud.waypoint || randomWaypointWithinBounds();
+                if (ud.role === 'pursuit') {
+                    // Prever posição futura do jogador, manter separação e perseguir com lead
+                    const distToPlayer = enemy.position.distanceTo(playerPos);
+                    const minSep = 360; // distância mínima segura (maior)
+                    const orbitOffset = 180; // raio lateral quando muito perto (dobrado)
+                    const upVec = new THREE.Vector3(0, 1, 0);
+                    const sideVec = new THREE.Vector3().crossVectors(playerForward, upVec).normalize(); // direita do jogador
+                    if (ud.orbitSide === undefined) ud.orbitSide = Math.random() < 0.5 ? 1 : -1; // escolher lado
+
+                    if (distToPlayer < minSep) {
+                        // Muito perto: orbitar ao redor em vez de colidir
+                        waypoint = playerPos.clone().add(sideVec.multiplyScalar(ud.orbitSide * orbitOffset));
+                        ud.targetAltitude = airplane.position.y + (ud.orbitSide * 12);
+                    } else {
+                        // Lead maior para não colar demais
+                        const lead = THREE.MathUtils.clamp(distToPlayer * 1.2, 240, 520);
+                        waypoint = playerPos.clone().add(playerForward.multiplyScalar(lead));
+                        ud.targetAltitude = airplane.position.y + THREE.MathUtils.clamp((airplane.position.y - enemy.position.y) * 0.4, -40, 40);
+                    }
+                    ud.waypoint = waypoint;
+                    ud.nextChangeAt = nowTime + 400 + Math.random() * 400; // atualiza com mais frequência
+                } else {
+                    const distToWaypoint = enemy.position.distanceTo(waypoint);
+                    if (!ud.nextChangeAt || nowTime > ud.nextChangeAt || distToWaypoint < 60) {
+                        ud.waypoint = randomWaypointWithinBounds();
+                        ud.targetAltitude = ud.waypoint.y;
+                        ud.nextChangeAt = nowTime + 2000 + Math.random() * 4000;
+                    }
                 }
 
                 // Calcular yaw desejado e aplicar viragem limitada
@@ -1043,22 +1080,42 @@ function createClouds() {
                 const yawError = normalizeAngle(desiredYaw - enemy.rotation.y);
                 const maxYawStep = (ud.turnRate || 0.6) * delta;
                 const yawStep = THREE.MathUtils.clamp(yawError, -maxYawStep, maxYawStep);
-                enemy.rotation.y += yawStep;
+                // Aumentar raio de curva quando muito próximo do jogador
+                const distCloseYaw = enemy.position.distanceTo(airplane.position);
+                const minSepYaw = 360;
+                const yawScale = (ud.role === 'pursuit' && distCloseYaw < minSepYaw)
+                    ? THREE.MathUtils.clamp(distCloseYaw / minSepYaw, 0.35, 1)
+                    : 1;
+                enemy.rotation.y += yawStep * yawScale;
 
                 // Avançar para frente (velocidade em unidades/segundo)
                 const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(enemy.quaternion);
+                // Velocidade original (sem ajustes por pitch ou proximidade)
+                const distToPlayerMove = enemy.position.distanceTo(airplane.position);
+                const minSepMove = 280; // manter separação para lógica de repulsão abaixo
                 enemy.position.addScaledVector(forwardVector, (ud.speed || 40) * delta);
+
+                // Repulsão suave quando muito próximo do jogador (evita colisões frontais)
+                if (ud.role === 'pursuit' && distToPlayerMove < minSepMove) {
+                    const toPlayer = playerPos.clone().sub(enemy.position);
+                    const away = toPlayer.multiplyScalar(-1).normalize();
+                    const closeFactor = THREE.MathUtils.clamp((minSepMove - distToPlayerMove) / minSepMove, 0, 1);
+                    const avoidanceStrength = 80; // força base da repulsão
+                    enemy.position.addScaledVector(away, avoidanceStrength * closeFactor * delta);
+                }
 
                 // Leve deriva aleatória apenas no voo normal, usando tempo em segundos
                 const tSec = nowTime * 0.001;
-                enemy.position.x += Math.sin(tSec * 0.8) * 0.05;
-                enemy.position.z += Math.cos(tSec * 0.9) * 0.05;
+                if (ud.role !== 'pursuit') {
+                    enemy.position.x += Math.sin(tSec * 0.6) * 0.05;
+                    enemy.position.z += Math.cos(tSec * 0.7) * 0.05;
+                }
 
                 // Ajustar altitude com velocidade vertical limitada (suavização realista)
                 const targetAlt = THREE.MathUtils.clamp(ud.targetAltitude || enemyCenter.y, enemyBounds.minY, enemyBounds.maxY);
                 const errorAlt = targetAlt - enemy.position.y;
                 const desiredVel = THREE.MathUtils.clamp(errorAlt, -(ud.maxClimbRate || 20), (ud.maxClimbRate || 20));
-                ud.verticalSpeed = THREE.MathUtils.lerp(ud.verticalSpeed || 0, desiredVel, 0.05);
+                ud.verticalSpeed = THREE.MathUtils.lerp(ud.verticalSpeed || 0, desiredVel, 0.06);
                 enemy.position.y += (ud.verticalSpeed || 0) * delta;
                 enemy.position.y = THREE.MathUtils.clamp(enemy.position.y, enemyBounds.minY, enemyBounds.maxY);
                 enemy.userData = ud;
@@ -1067,9 +1124,21 @@ function createClouds() {
                 enemy.position.x = THREE.MathUtils.clamp(enemy.position.x, enemyBounds.minX, enemyBounds.maxX);
                 enemy.position.z = THREE.MathUtils.clamp(enemy.position.z, enemyBounds.minZ, enemyBounds.maxZ);
 
-                // Inclinar (roll) proporcional à viragem
-                const targetBank = THREE.MathUtils.clamp(yawError * 1.2, -(ud.maxBank || 0.5), (ud.maxBank || 0.5));
-                enemy.rotation.z = THREE.MathUtils.lerp(enemy.rotation.z || 0, targetBank, ud.bankLerp || 0.05);
+                // Inclinar (roll) proporcional à viragem — mais agressivo
+                // Reduzir bank quando próximo para evitar curvas muito fechadas
+                const bankScale = (ud.role === 'pursuit' && distCloseYaw < minSepYaw)
+                    ? THREE.MathUtils.clamp(distCloseYaw / minSepYaw, 0.5, 1)
+                    : 1;
+                const targetBank = THREE.MathUtils.clamp(yawError * (1.8 * bankScale), -(ud.maxBank || 0.7), (ud.maxBank || 0.7));
+                enemy.rotation.z = THREE.MathUtils.lerp(enemy.rotation.z || 0, targetBank, ud.bankLerp || 0.08);
+
+                // Pitch agressivo: nariz para cima/baixo conforme erro de altitude e viragem
+                const maxPitch = ud.maxPitch || 0.6;
+                const pitchScale = (ud.role === 'pursuit' && distCloseYaw < minSepYaw)
+                    ? THREE.MathUtils.clamp(distCloseYaw / minSepYaw, 0.6, 1)
+                    : 1;
+                const targetPitch = THREE.MathUtils.clamp((-errorAlt * 0.008 + yawError * 0.06) * pitchScale, -maxPitch, maxPitch);
+                enemy.rotation.x = THREE.MathUtils.lerp(enemy.rotation.x || 0, targetPitch, 0.06);
 
                 // Evitar sair dos limites: se perto das bordas, escolher waypoint voltado ao centro
                 const nearEdge = (
