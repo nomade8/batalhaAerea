@@ -264,15 +264,15 @@ function createClouds() {
 
             // Pista principal
             const runwayGeometry = new THREE.PlaneGeometry(10, 200); // Pista mais longa
-            const runwayMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7, metalness: 0.1 });
+            const runwayMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
             const runway = new THREE.Mesh(runwayGeometry, runwayMaterial);
             runway.rotation.x = -Math.PI / 2;
-            runway.position.y = -3.98; // Ajustado para ficar no nível do terreno
+            runway.position.y = -3.96; // Ajustado para ficar no nível do terreno
             runway.receiveShadow = true;
             runwayGroup.add(runway);
 
             // Marcações centrais
-            const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, emissive: 0xFFFFFF, emissiveIntensity: 0.2 });
+            const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, emissive: 0xFFFFFF, emissiveIntensity: 0.2, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
             for (let i = -90; i <= 90; i += 20) {
                 const lineGeometry = new THREE.PlaneGeometry(0.5, 10);
                 const line = new THREE.Mesh(lineGeometry, lineMaterial);
@@ -532,7 +532,7 @@ function createClouds() {
                         bankLerp: 0.08,
                         maxPitch: 0.5,
                         role: 'random',
-                        hp: THREE.MathUtils.randInt(2, 4), // impactos para morrer
+                        hp: THREE.MathUtils.randInt(5, 8), // impactos para morrer
                         dying: false,
                         spinSpeed: 0
                     };
