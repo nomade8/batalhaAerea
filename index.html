@@ -1198,7 +1198,7 @@ function createClouds() {
 
                 // Consumo de combustível
                 if (planeState.fuel > 0 && planeState.speed > 0) {
-                    planeState.fuel -= 0.005 * (planeState.speed / 100);
+                    planeState.fuel -= 0.05 * (planeState.speed / 100);
                     planeState.fuel = Math.max(planeState.fuel, 0);
                 } else if (planeState.fuel <= 0) {
                     planeState.speed = Math.max(planeState.speed - 0.5, 0);
@@ -1292,7 +1292,7 @@ function createClouds() {
                             enemy.userData.spinSpeed = 0.15 + Math.random() * 0.25; // yaw leve para realismo
                             enemy.userData.verticalSpeed = 0; // inicia queda sem velocidade vertical inicial
                             enemy.userData.gravity = 9.8; // aceleração gravitacional aproximada
-                            enemy.userData.horizontalSpeed = enemy.userData.speed || 40; // manter velocidade horizontal existente
+                            enemy.userData.horizontalSpeed = enemy.userData.speed; // manter velocidade horizontal existente
                             enemy.userData.dyingDirection = new THREE.Vector3();
                             enemy.getWorldDirection(enemy.userData.dyingDirection);
                             enemy.userData.dyingDirection.multiplyScalar(-1);
