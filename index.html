@@ -99,6 +99,8 @@
         const ktx2Loader = new KTX2Loader()
             .setTranscoderPath('https://unpkg.com/three@0.164.1/examples/jsm/libs/basis/')
             .detectSupport(renderer);
+
+        const textureLoader = new THREE.TextureLoader();
         renderer.setSize(window.innerWidth, window.innerHeight);
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
         pmremGenerator.compileEquirectangularShader();
@@ -205,7 +207,7 @@
             groundGeometry.computeVertexNormals();
 
             let groundMaterial;
-            ktx2Loader.load('3dpea.com_image-studio-1759756265628.ktx2', (texture) => {
+            textureLoader.load('chao.jpg', (texture) => {
                 groundMaterial = new THREE.MeshStandardMaterial({
                     map: texture,
                     side: THREE.DoubleSide
