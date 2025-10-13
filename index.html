@@ -62,10 +62,32 @@
             width: 100%;
             margin-top: -1px;
         }
+        /* Overlay de Game Over */
+        #game-over {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: none; /* aparece após 1s da morte */
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.6);
+            z-index: 2000;
+        }
+        #game-over .text {
+            color: #fff;
+            font-size: 64px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-shadow: 0 0 12px rgba(255,255,255,0.8);
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        }
     </style>
 </head>
 <body>
     <div id="hud"></div>
+    <div id="game-over"><div class="text">GAME OVER</div></div>
     <script type="importmap">
         {
             "imports": {
@@ -449,11 +471,16 @@ function createClouds() {
                 <div class="hud-label">Combustível</div>
                 <div class="hud-bar"><div id="hud-fuel-fill" class="hud-fill"></div></div>
             </div>
+            <div class="hud-item">
+                <div class="hud-label">Vida</div>
+                <div class="hud-bar"><div id="hud-health-fill" class="hud-fill"></div></div>
+            </div>
         `;
         const hudHeadingValue = document.getElementById('hud-heading-value');
         const hudSpeedValue = document.getElementById('hud-speed-value');
             const hudAltitudeValue = document.getElementById('hud-altitude-value');
         const hudFuelFill = document.getElementById('hud-fuel-fill');
+        const hudHealthFill = document.getElementById('hud-health-fill');
 
         // Variáveis para suavização (estas serão substituídas pela lógica do planeState)
         // const clock = new THREE.Clock(); // Já existe
@@ -554,9 +581,13 @@ function createClouds() {
 
         // Geometria e Material para os projéteis
         const bulletGeometry = new THREE.SphereGeometry(0.2, 12, 12); // maior para fácil visualização
-        const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Vermelho para visibilidade
+        const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Vermelho para visibilidade (jogador)
 
-        const bullets = []; // Array para armazenar os projéteis ativos
+        const bullets = []; // Array para armazenar os projéteis ativos do jogador
+
+        // Projéteis dos inimigos (cor diferente para distinguir)
+        const enemyBulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Amarelo para inimigos
+        const enemyBullets = []; // Array de projéteis dos inimigos
 
         // Efeitos visuais: explosões e fumaça
         const explosions = [];
@@ -580,6 +611,59 @@ function createClouds() {
             explosionSpriteTexture = new THREE.CanvasTexture(canvas);
             explosionSpriteTexture.needsUpdate = true;
             return explosionSpriteTexture;
+        }
+
+        // Flash curto para impactos no jogador (sprite additive, duração breve)
+        function createHitFlash(position, scale = 1) {
+            const mat = new THREE.SpriteMaterial({
+                map: getExplosionSpriteTexture(),
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            const sprite = new THREE.Sprite(mat);
+            sprite.position.copy(position);
+            sprite.scale.setScalar(1.8 * scale);
+            sprite.userData = {
+                birth: performance.now(),
+                duration: 160,
+                scaleBase: 1,
+                scaleGrowth: 2.0,
+                opacityStart: 1,
+                opacityEnd: 0
+            };
+            scene.add(sprite);
+            explosions.push(sprite);
+        }
+        // Clarão preso à câmera: aparece sempre na frente da visão
+        function createCameraHitFlash(scale = 1) {
+            const mat = new THREE.SpriteMaterial({
+                map: getExplosionSpriteTexture(),
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthTest: false,
+                depthWrite: false
+            });
+            const sprite = new THREE.Sprite(mat);
+            // posição inicial em frente à câmera (será atualizada a cada frame)
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+            const offset = 1.6; // distância à frente da câmera
+            sprite.position.copy(camera.position).add(dir.multiplyScalar(offset));
+            sprite.scale.setScalar(3.2 * scale); // maior para visibilidade
+            sprite.renderOrder = 9999;
+            sprite.userData = {
+                birth: performance.now(),
+                duration: 220,
+                scaleBase: 1,
+                scaleGrowth: 3.2,
+                opacityStart: 1,
+                opacityEnd: 0,
+                trackCamera: true,
+                cameraOffset: offset
+            };
+            scene.add(sprite);
+            explosions.push(sprite);
         }
 
         // Explosão no ar (impacto de bala) mais realista e leve
@@ -656,6 +740,78 @@ function createClouds() {
             explosions.push(ring);
         }
 
+        // Explosão do jogador com duração de 1 segundo
+        function createPlayerExplosion(position, scale = 1) {
+            const base = position.clone();
+            base.y = Math.max(base.y, 1);
+            const nowBirth = performance.now();
+
+            // Flash inicial mais longo
+            const flashMat = new THREE.SpriteMaterial({
+                map: getExplosionSpriteTexture(),
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            const flash = new THREE.Sprite(flashMat);
+            flash.position.copy(base);
+            flash.scale.setScalar(3.2 * scale);
+            flash.userData = {
+                birth: nowBirth,
+                duration: 1000,
+                scaleBase: 1,
+                scaleGrowth: 3.2,
+                opacityStart: 1,
+                opacityEnd: 0
+            };
+            scene.add(flash);
+            explosions.push(flash);
+
+            // Puffs de fogo/fumaça com duração estendida
+            const puffCount = 8 + Math.floor(Math.random() * 4); // 8-11 puffs
+            for (let i = 0; i < puffCount; i++) {
+                const size = (0.5 + Math.random() * 0.6) * scale;
+                const geo = new THREE.SphereGeometry(size * 1.2, 12, 12);
+                const hue = 0.08 + Math.random() * 0.06;
+                const color = new THREE.Color().setHSL(hue, 0.9, 0.5);
+                const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
+                const puff = new THREE.Mesh(geo, mat);
+                const offset = new THREE.Vector3(
+                    (Math.random() - 0.5) * 2.6 * scale,
+                    (Math.random() - 0.5) * 1.8 * scale,
+                    (Math.random() - 0.5) * 2.6 * scale
+                );
+                puff.position.copy(base).add(offset);
+                puff.userData = {
+                    birth: nowBirth,
+                    duration: 1000 + Math.random() * 400,
+                    scaleBase: 0.8,
+                    scaleGrowth: 3.2 + Math.random() * 1.6,
+                    opacityStart: 1,
+                    opacityEnd: 0
+                };
+                scene.add(puff);
+                explosions.push(puff);
+            }
+
+            // Onda de choque com 1 segundo
+            const ringGeo = new THREE.RingGeometry(0.35 * scale, 0.5 * scale, 28);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0xffe09a, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.position.copy(base);
+            ring.lookAt(camera.position);
+            ring.userData = {
+                birth: nowBirth,
+                duration: 1000,
+                scaleBase: 1,
+                scaleGrowth: 3.0,
+                opacityStart: 0.9,
+                opacityEnd: 0
+            };
+            scene.add(ring);
+            explosions.push(ring);
+        }
+
         // Explosão aprimorada no chão (múltiplos puffs + onda de choque)
         function createGroundExplosion(position) {
             const base = position.clone();
@@ -708,9 +864,11 @@ function createClouds() {
         }
 
         const planeState = {
-            speed: -18, // Velocidade inicial
+            speed: -20, // Velocidade inicial
             altitude: 1000, // Altitude inicial
             fuel: 100, // Combustível inicial
+            health: 8, // Vida inicial (tiros que pode levar)
+            healthMax: 8, // Máximo de vida
             rotation: 0, // Rotação Y (yaw)
             pitch: 0, // Rotação X (pitch)
             roll: 0, // Rotação Z (roll)
@@ -720,6 +878,10 @@ function createClouds() {
             isPitchingDown: false,
             isSpeedingUp: false,
             isSlowingDown: false,
+            dead: false,
+            deadAt: null,
+            gameOverShown: false,
+            wasGrounded: false,
         };
 
         // Variáveis para controle de câmera (OrbitControls não será usado, mas manteremos a estrutura para referência)
@@ -768,12 +930,35 @@ function createClouds() {
             // Lógica de aumento/diminuição de velocidade (corrigida)
             const maxSpeed = -100; // Limite de velocidade máxima
             const minSpeed = 0;  // Limite de velocidade mínima
-            const lerpFactorSpeed = 0.01; // Fator de interpolação para velocidade (ajustado para uma resposta mais suave)
+            const lerpFactorSpeed = 0.002; // Fator de interpolação para velocidade (ajustado para uma resposta mais suave)
 
-            if (planeState.isSpeedingUp) {
-                planeState.speed = THREE.MathUtils.lerp(planeState.speed, maxSpeed, lerpFactorSpeed);
-            } else if (planeState.isSlowingDown) {
-                planeState.speed = THREE.MathUtils.lerp(planeState.speed, minSpeed, lerpFactorSpeed);
+            // Detecta se o avião está no solo usando a altura do terreno
+            const groundY = getGroundHeightAt(airplane.position.x, airplane.position.z);
+            const isGrounded = airplane.position.y <= groundY + 0.3;
+
+            if (isGrounded) {
+                // No solo: usar aceleração/frenagem gradual (em vez de LERP) para realismo
+                const groundAccel = 18;   // aceleração no solo (unid/s²)
+                const groundBrake = 120;   // frenagem no solo (unid/s²)
+                const groundDrag = 8;     // arrasto quando sem throttle
+
+                if (planeState.isSpeedingUp) {
+                    // Acelerar: tornar speed mais negativo gradualmente até maxSpeed
+                    planeState.speed = THREE.MathUtils.clamp(planeState.speed - groundAccel * delta, maxSpeed, minSpeed);
+                } else if (planeState.isSlowingDown) {
+                    // Frear: levar speed em direção a 0 gradualmente
+                    planeState.speed = THREE.MathUtils.clamp(planeState.speed + groundBrake * delta, maxSpeed, minSpeed);
+                } else {
+                    // Sem throttle: aplicar leve arrasto no solo
+                    planeState.speed = THREE.MathUtils.clamp(planeState.speed + groundDrag * delta, maxSpeed, minSpeed);
+                }
+            } else {
+                // No ar: manter interpolação suave atual
+                if (planeState.isSpeedingUp) {
+                    planeState.speed = THREE.MathUtils.lerp(planeState.speed, maxSpeed, lerpFactorSpeed);
+                } else if (planeState.isSlowingDown) {
+                    planeState.speed = THREE.MathUtils.lerp(planeState.speed, minSpeed, lerpFactorSpeed);
+                }
             }
         }
         // --- Fim das funções de controle ---
@@ -1094,7 +1279,7 @@ function createClouds() {
                 // Velocidade original (sem ajustes por pitch ou proximidade)
                 const distToPlayerMove = enemy.position.distanceTo(airplane.position);
                 const minSepMove = 280; // manter separação para lógica de repulsão abaixo
-                enemy.position.addScaledVector(forwardVector, (ud.speed || 40) * delta);
+                enemy.position.addScaledVector(forwardVector, (ud.speed || ud.speed) * delta);
 
                 // Repulsão suave quando muito próximo do jogador (evita colisões frontais)
                 if (ud.role === 'pursuit' && distToPlayerMove < minSepMove) {
@@ -1152,6 +1337,54 @@ function createClouds() {
                     ud.targetAltitude = safeWaypoint.y;
                 }
 
+                // Disparo do inimigo: somente quando estiver em distância razoável e alinhado
+                // Parâmetros de ataque (ajustados para melhorar acerto)
+                ud.attackRange = ud.attackRange || 800; // engajar um pouco mais longe
+                ud.fireAngle = ud.fireAngle || 0.4; // janela frontal mantida
+                ud.fireCooldownMs = ud.fireCooldownMs || 180; // atirar mais frequentemente
+                ud.nextFireAt = ud.nextFireAt || 0;
+
+                const toPlayerVec = playerPos.clone().sub(enemy.position);
+                const distToPlayerShoot = toPlayerVec.length();
+                if (distToPlayerShoot < ud.attackRange) {
+                    const enemyForward = new THREE.Vector3(0, 0, -1).applyQuaternion(enemy.quaternion);
+                    const aimAngle = enemyForward.angleTo(toPlayerVec.normalize());
+                    if (aimAngle < ud.fireAngle && nowTime >= ud.nextFireAt) {
+                        // Origem dos tiros (aproximação das asas do inimigo)
+                        const wingSpread = 1.6; // reduzir espalhamento para convergir melhor
+                        const wingForward = 1.6; // levemente mais à frente
+                        const wingHeight = -0.4;
+
+                        const leftOffset = new THREE.Vector3(-wingSpread, wingHeight, wingForward).applyQuaternion(enemy.quaternion);
+                        const rightOffset = new THREE.Vector3(wingSpread, wingHeight, wingForward).applyQuaternion(enemy.quaternion);
+                        const leftWorld = enemy.position.clone().add(leftOffset);
+                        const rightWorld = enemy.position.clone().add(rightOffset);
+
+                        // Mira com interceptação: estima posição futura do jogador
+                        const speed = 360; // velocidade do projétil (unid/s)
+                        const moveDir = new THREE.Vector3(0, 0, 1).applyQuaternion(airplane.quaternion); // direção de movimento do jogador
+                        const playerSpeedApprox = Math.abs(planeState.speed) * 0.6; // ~unid/s (speed -100 ≈ 60 unid/s)
+                        const playerVel = moveDir.multiplyScalar(playerSpeedApprox);
+                        const timeToHit = Math.min(distToPlayerShoot / speed, 1.5);
+                        const targetPoint = playerPos.clone().add(playerVel.clone().multiplyScalar(timeToHit));
+
+                        const createEnemyBullet = (origin) => {
+                            const b = new THREE.Mesh(bulletGeometry, enemyBulletMaterial);
+                            b.position.copy(origin);
+                            const dir = targetPoint.clone().sub(origin).normalize();
+                            b.userData = { velocity: dir.multiplyScalar(speed), birth: performance.now() };
+                            scene.add(b);
+                            enemyBullets.push(b);
+                        };
+
+                        createEnemyBullet(leftWorld);
+                        createEnemyBullet(rightWorld);
+
+                        // Próximo disparo após cooldown com jitter reduzido
+                        ud.nextFireAt = nowTime + ud.fireCooldownMs + Math.random() * 40;
+                    }
+                }
+
                 // Atualizar marcador no minimapa
                 if (ud.minimapMarker) {
                     ud.minimapMarker.position.x = enemy.position.x;
@@ -1169,7 +1402,7 @@ function createClouds() {
 
 
             // --- Lógica de atualização do avião baseada em simulador trae.txt ---
-            // if (airplane) { // Garante que o avião foi carregado - Removido, pois a verificação já é feita acima
+            if (!planeState.dead) {
                 const turnSpeed = 0.012;
                 const pitchSpeed = 0.008;
                 const maxPitch = 0.8; // Maximum pitch angle
@@ -1196,12 +1429,14 @@ function createClouds() {
                     planeState.pitch = Math.min(planeState.pitch + pitchSpeed, maxPitch); // Invertido
                 }
 
-                // Consumo de combustível
-                if (planeState.fuel > 0 && planeState.speed > 0) {
-                    planeState.fuel -= 0.05 * (planeState.speed / 100);
+                // Consumo de combustível corrigido (usa velocidade absoluta)
+                const speedAbs = Math.abs(planeState.speed);
+                if (planeState.fuel > 0 && speedAbs > 2) {
+                    planeState.fuel -= 0.008 * (speedAbs / 100);
                     planeState.fuel = Math.max(planeState.fuel, 0);
                 } else if (planeState.fuel <= 0) {
-                    planeState.speed = Math.max(planeState.speed - 0.5, 0);
+                    // Sem combustível: reduzir velocidade em direção a 0 e baixar nariz
+                    planeState.speed = Math.min(planeState.speed + 0.5, 0);
                     planeState.pitch = Math.max(planeState.pitch - 0.01, -0.2);
                 }
 
@@ -1231,7 +1466,7 @@ function createClouds() {
                 airplane.position.add(moveVector);
 
                 // Condição de Stall: se a velocidade for muito baixa, o avião perde altitude
-                if (planeState.speed >= -14) {
+                if (planeState.speed >= -20) {
                     airplane.position.y -= 0.02; // Perde altitude
                 }
 
@@ -1240,12 +1475,110 @@ function createClouds() {
                     airplane.position.y = Math.max(airplane.position.y, -3.5);
                 }
 
+                // Evento de pouso: ao tocar o chão, restaurar vida e combustível (apenas uma vez por toque)
+                const groundY_player = getGroundHeightAt(airplane.position.x, airplane.position.z);
+                const isGroundedRay = airplane.position.y <= groundY_player + 0.35;
+                const isGroundedClamp = airplane.position.y <= -3.5 + 0.05;
+                const isGroundedNow = isGroundedRay || isGroundedClamp;
+                if (isGroundedNow && !planeState.wasGrounded) {
+                    planeState.fuel = 100;
+                    planeState.health = planeState.healthMax || 8;
+                }
+                planeState.wasGrounded = isGroundedNow;
 
 
                 // Atualizar a câmera para seguir o avião (não mais necessário, pois é filho)
                 // camera.position.copy(airplane.position).add(cameraOffset);
                 // camera.lookAt(airplane.position);
-            // --- Fim da lógica de atualização do avião ---
+            } else {
+                // --- Sequência de queda do jogador (similar aos inimigos) ---
+                if (planeState.dyingState === undefined) {
+                    planeState.dyingState = 'nosingDown';
+                }
+                if (planeState.dyingStartPitch === undefined) {
+                    planeState.dyingStartPitch = airplane.rotation.x;
+                }
+                if (planeState.dyingPitchProgress === undefined) {
+                    planeState.dyingPitchProgress = 0;
+                }
+                if (planeState.verticalSpeed === undefined) {
+                    planeState.verticalSpeed = 0;
+                }
+                if (planeState.horizontalSpeed === undefined) {
+                    planeState.horizontalSpeed = Math.max(Math.abs(planeState.speed), 20);
+                }
+                if (planeState.dyingDirection === undefined) {
+                    planeState.dyingDirection = new THREE.Vector3();
+                    airplane.getWorldDirection(planeState.dyingDirection);
+                    planeState.dyingDirection.multiplyScalar(-1);
+                }
+
+                // Emissão de fumaça durante a queda
+                planeState.smokeTimer = (planeState.smokeTimer || 0) + delta;
+                if (planeState.smokeTimer > 0.08) {
+                    createSmokePuff(airplane);
+                    planeState.smokeTimer = 0;
+                }
+
+                if (planeState.dyingState === 'nosingDown') {
+                    planeState.dyingPitchProgress += delta * 0.6;
+                    const targetPitch = -0.7;
+                    const t = THREE.MathUtils.clamp(planeState.dyingPitchProgress, 0, 1);
+                    airplane.rotation.x = THREE.MathUtils.lerp(planeState.dyingStartPitch, targetPitch, t);
+                    airplane.rotation.z += 0.25 * delta; // leve roll
+
+                    airplane.position.x += planeState.dyingDirection.x * planeState.horizontalSpeed * delta;
+                    airplane.position.z += planeState.dyingDirection.z * planeState.horizontalSpeed * delta;
+                    planeState.verticalSpeed -= (9.8) * delta;
+                    airplane.position.y += planeState.verticalSpeed * delta;
+
+                    if (planeState.dyingPitchProgress >= 1) {
+                        planeState.dyingState = 'preSpinDelay';
+                        planeState.spinDelayTimer = 0;
+                    }
+                } else if (planeState.dyingState === 'preSpinDelay') {
+                    planeState.spinDelayTimer += delta;
+                    // aceleração de roll
+                    planeState.rollSpinRate = Math.min((planeState.rollSpinRate || 0) + 1.5 * 1.2 * delta, 2.5);
+                    airplane.rotation.z += planeState.rollSpinRate * delta;
+
+                    airplane.position.x += planeState.dyingDirection.x * planeState.horizontalSpeed * delta;
+                    airplane.position.z += planeState.dyingDirection.z * planeState.horizontalSpeed * delta;
+                    planeState.verticalSpeed -= 9.8 * delta;
+                    airplane.position.y += planeState.verticalSpeed * delta;
+
+                    if (planeState.spinDelayTimer >= 0.5) {
+                        planeState.dyingState = 'spinning';
+                    }
+                } else if (planeState.dyingState === 'spinning') {
+                    // yaw leve
+                    airplane.rotation.y += (planeState.spinSpeed || 0.2) * delta;
+                    // continuar roll acelerado
+                    planeState.rollSpinRate = Math.min((planeState.rollSpinRate || 0) + 1.5 * 1.5 * delta, 2.75);
+                    airplane.rotation.z += planeState.rollSpinRate * delta;
+
+                    planeState.verticalSpeed -= 9.8 * delta;
+                    airplane.position.y += planeState.verticalSpeed * delta;
+                    airplane.position.x += planeState.dyingDirection.x * planeState.horizontalSpeed * delta;
+                    airplane.position.z += planeState.dyingDirection.z * planeState.horizontalSpeed * delta;
+                }
+
+                // Parar hélice rapidamente ao morrer
+                if (typeof propellerSpeed !== 'undefined') {
+                    propellerSpeed = THREE.MathUtils.lerp(propellerSpeed, 0, 0.2);
+                }
+
+                // Colisão com o chão: explosão e parar
+                const groundY = getGroundHeightAt(airplane.position.x, airplane.position.z);
+                // Explode apenas uma vez, quando cruzar o limite do chão
+                if (airplane.position.y <= groundY + 0.2 && planeState.dyingState !== 'crashed') {
+                    createGroundExplosion(airplane.position);
+                    airplane.position.y = groundY + 0.0;
+                    planeState.verticalSpeed = 0;
+                    planeState.horizontalSpeed = 0;
+                    planeState.dyingState = 'crashed';
+                }
+            }
 
             // Disparo contínuo com cooldown
             const nowShoot = performance.now();
@@ -1315,6 +1648,42 @@ function createClouds() {
                 }
             }
 
+            // Atualizar projéteis dos inimigos: movimento e colisão com o jogador
+            for (let i = enemyBullets.length - 1; i >= 0; i--) {
+                const eb = enemyBullets[i];
+                const vel = eb.userData.velocity;
+                eb.position.addScaledVector(vel, delta);
+
+                // Colisão com o jogador
+                const distPlayer = eb.position.distanceTo(airplane.position);
+                if (distPlayer < 4.2) {
+                    // Impacto visual no jogador: flash no lado atingido
+                    const rightVec = new THREE.Vector3(1, 0, 0).applyQuaternion(airplane.quaternion);
+                    const toBullet = eb.position.clone().sub(airplane.position);
+                    const sideSign = Math.sign(rightVec.dot(toBullet));
+                    const sideOffset = rightVec.clone().multiplyScalar(2.0 * (sideSign >= 0 ? 1 : -1));
+                    const hitPos = airplane.position.clone().add(sideOffset).add(new THREE.Vector3(0, 0.4, 0));
+                    // Substituir clarão lateral por clarão em frente à câmera
+                    createCameraHitFlash(1);
+                    planeState.health = Math.max(planeState.health - 1, 0);
+                    // Efeito de morte simples ao zerar vida
+                    if (planeState.health === 0 && !planeState.dead) {
+                        planeState.dead = true;
+                        planeState.deadAt = performance.now();
+                        createPlayerExplosion(airplane.position, 3.0);
+                    }
+                    scene.remove(eb);
+                    enemyBullets.splice(i, 1);
+                    continue;
+                }
+
+                // Tempo de vida
+                if (now - eb.userData.birth > 4500) {
+                    scene.remove(eb);
+                    enemyBullets.splice(i, 1);
+                }
+            }
+
             // Atualizar HUD: direção (números) e barras de progresso
             let heading = (airplane.rotation.y * 180 / Math.PI) % 360;
             if (heading < 0) heading += 360;
@@ -1327,6 +1696,16 @@ function createClouds() {
             // Combustível: 0..100
             const fuelFraction = THREE.MathUtils.clamp(planeState.fuel / 100, 0, 1);
             hudFuelFill.style.width = `${(fuelFraction * 100).toFixed(0)}%`;
+
+            // Vida: baseado em hits restantes (0..healthMax)
+            const healthFraction = THREE.MathUtils.clamp(planeState.health / (planeState.healthMax || 8), 0, 1);
+            if (hudHealthFill) {
+                hudHealthFill.style.width = `${(healthFraction * 100).toFixed(0)}%`;
+                // Cor dinâmica: verde alto, amarelo médio, vermelho baixo
+                const color = healthFraction > 0.66 ? '#3cfb3c' : (healthFraction > 0.33 ? '#ffcc33' : '#ff3333');
+                hudHealthFill.style.background = `linear-gradient(90deg, ${color}, ${color})`;
+                hudHealthFill.style.boxShadow = `0 0 6px ${color}`;
+            }
 
             // --- Atualizações do minimapa ---
             // Seguir o avião com a câmera do minimapa e girar o mapa pelo heading
@@ -1358,6 +1737,18 @@ function createClouds() {
                     scene.remove(ex);
                     explosions.splice(i, 1);
                 } else {
+                    // Manter clarões presos à câmera em frente à visão
+                    if (ex.userData && ex.userData.trackCamera) {
+                        const dir = new THREE.Vector3();
+                        camera.getWorldDirection(dir);
+                        const offs = ex.userData.cameraOffset ?? 1.4;
+                        ex.position.copy(camera.position).add(dir.multiplyScalar(offs));
+                        if (ex.material) {
+                            ex.material.depthTest = false;
+                            ex.material.depthWrite = false;
+                        }
+                        ex.renderOrder = 9999;
+                    }
                     const base = ex.userData.scaleBase ?? 1;
                     const growth = ex.userData.scaleGrowth ?? 3.5;
                     const scale = base + growth * t;
@@ -1387,6 +1778,18 @@ function createClouds() {
                     s.position.y += 0.4 * (delta * 60) / 60; // sobe devagar
                     s.position.x += (Math.random() - 0.5) * 0.01;
                     s.position.z += (Math.random() - 0.5) * 0.01;
+                }
+            }
+
+            // Game Over: exibir overlay após 1 segundo da morte
+            if (planeState.dead && !planeState.gameOverShown) {
+                const start = planeState.deadAt || now;
+                const elapsed = now - start;
+                if (!planeState.deadAt) planeState.deadAt = now;
+                if (elapsed >= 1000) {
+                    const go = document.getElementById('game-over');
+                    if (go) go.style.display = 'flex';
+                    planeState.gameOverShown = true;
                 }
             }
 
