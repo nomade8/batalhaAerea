@@ -101,6 +101,7 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { KTX2Loader } from 'https://unpkg.com/three@0.164.1/examples/jsm/loaders/KTX2Loader.js';
         import { Sky } from 'three/addons/objects/Sky.js';
+        import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
         const scene = new THREE.Scene();
 
@@ -425,14 +426,13 @@ function createClouds() {
     
             }
             
-            // Carregar 5 aviões inimigos vindos de cantos do terreno
-            Promise.all([
-                loadEnemyAirplane(randomCornerSpawn()),
-                loadEnemyAirplane(randomCornerSpawn()),
-                loadEnemyAirplane(randomCornerSpawn()),
-                loadEnemyAirplane(randomCornerSpawn()),
-                loadEnemyAirplane(randomCornerSpawn())
-            ]).then(() => {
+            // Carregar protótipo e instanciar 5 aviões inimigos de cantos do terreno via pool
+            ensureEnemyPrototype().then(() => {
+                spawnEnemyAt(randomCornerSpawn());
+                spawnEnemyAt(randomCornerSpawn());
+                spawnEnemyAt(randomCornerSpawn());
+                spawnEnemyAt(randomCornerSpawn());
+                spawnEnemyAt(randomCornerSpawn());
                 // Definir três inimigos como perseguidores do jogador
                 const pursuers = enemyAirplanes.slice(0, 3);
                 pursuers.forEach((e) => {
@@ -445,7 +445,7 @@ function createClouds() {
                     e.userData.maxPitch = 0.7; // nariz mais agressivo
                 });
             }).catch(error => {
-                console.error('Erro ao carregar aviões inimigos:', error);
+                console.error('Erro ao inicializar inimigos:', error);
             });
 
             // Configurar a câmera para seguir o avião (não mais necessário, pois é filho)
@@ -537,51 +537,21 @@ function createClouds() {
             return corners[Math.floor(Math.random() * corners.length)].clone();
         }
 
-        // Função para carregar e configurar um avião inimigo (movido para escopo global)
-        const loadEnemyAirplane = (position) => {
-            return new Promise((resolve) => {
-                loader.load('spitfire_enemy.glb', (gltf) => {
-                    const enemyAirplane = gltf.scene;
-                    enemyAirplane.scale.set(1, 1, 1);
-                    enemyAirplane.rotation.order = 'YXZ'; // Definir ordem de rotação para YXZ
-                enemyAirplane.position.copy(position);
-                    // Definir waypoint inicial para o centro e heading voltado para ele
-                    const initialWaypoint = enemyCenter.clone();
-                    // Alinhar eixo -Z (frente do modelo) ao waypoint
-                    const desiredYaw = Math.atan2(position.x - initialWaypoint.x, position.z - initialWaypoint.z);
-                    enemyAirplane.rotation.y = desiredYaw;
-                    enemyAirplane.userData = {
-                        speed: 40 + Math.random() * 30, // unidades/segundo
-                        turnRate: 0.6 + Math.random() * 0.7, // rad/s (mais agressivo)
-                        nextChangeAt: performance.now() + 2000 + Math.random() * 3000,
-                        targetAltitude: position.y,
-                        verticalSpeed: 0,
-                        maxClimbRate: 28, // unidades/segundo
-                        waypoint: initialWaypoint,
-                        maxBank: 0.5 + Math.random() * 0.4,
-                        bankLerp: 0.08,
-                        maxPitch: 0.5,
-                        role: 'random',
-                        hp: THREE.MathUtils.randInt(5, 8), // impactos para morrer
-                        dying: false,
-                        spinSpeed: 0
-                    };
-                    scene.add(enemyAirplane);
-                    enemyAirplanes.push(enemyAirplane);
-
-                    // Criar marcador do inimigo no minimapa
-                    const enemyMarkerGeom = new THREE.CircleGeometry(3, 16);
-                    const enemyMarkerMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
-                    const enemyMarker = new THREE.Mesh(enemyMarkerGeom, enemyMarkerMat);
-                    enemyMarker.rotation.x = -Math.PI / 2;
-                    enemyMarker.position.y = -3.96; // ligeiramente acima do chão do minimapa
-                    minimapScene.add(enemyMarker);
-                    enemyAirplane.userData.minimapMarker = enemyMarker;
-
-                    resolve(enemyAirplane);
+        // Protótipo único de inimigo e helpers para inicialização via pool
+        let enemyPrototype = null;
+        let enemyPrototypePromise = null;
+        function ensureEnemyPrototype() {
+            if (enemyPrototype) return Promise.resolve(enemyPrototype);
+            if (!enemyPrototypePromise) {
+                enemyPrototypePromise = new Promise((resolve) => {
+                    loader.load('spitfire_enemy.glb', (gltf) => {
+                        enemyPrototype = gltf.scene;
+                        resolve(enemyPrototype);
+                    });
                 });
-            });
-        };
+            }
+            return enemyPrototypePromise;
+        }
 
         // Geometria e Material para os projéteis
         const bulletGeometry = new THREE.SphereGeometry(0.2, 12, 12); // maior para fácil visualização
@@ -593,9 +563,144 @@ function createClouds() {
         const enemyBulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Amarelo para inimigos
         const enemyBullets = []; // Array de projéteis dos inimigos
 
+        // --- Infraestrutura de Pool de Objetos ---
+        class ObjectPool {
+            constructor(createFn, resetFn, initialSize = 0) {
+                this.createFn = createFn;
+                this.resetFn = resetFn;
+                this.items = [];
+                this.free = [];
+                for (let i = 0; i < initialSize; i++) {
+                    const obj = this.createFn();
+                    this.items.push(obj);
+                    this.free.push(obj);
+                }
+            }
+            acquire() {
+                if (this.free.length > 0) return this.free.pop();
+                const obj = this.createFn();
+                this.items.push(obj);
+                return obj;
+            }
+            release(obj) {
+                this.resetFn(obj);
+                this.free.push(obj);
+            }
+        }
+
+        const playerBulletPool = new ObjectPool(
+            () => {
+                const b = new THREE.Mesh(bulletGeometry, bulletMaterial);
+                b.visible = false;
+                b.userData = { velocity: new THREE.Vector3(), birth: 0, guided: false };
+                return b;
+            },
+            (b) => {
+                b.visible = false;
+                if (b.parent) scene.remove(b); // Remover da cena quando liberado
+                if (!b.userData) b.userData = {};
+                if (!b.userData.velocity) b.userData.velocity = new THREE.Vector3();
+                b.userData.velocity.set(0, 0, 0);
+                b.userData.birth = 0;
+                b.userData.guided = false;
+            },
+            60
+        );
+
+        const enemyBulletPool = new ObjectPool(
+            () => {
+                const b = new THREE.Mesh(bulletGeometry, enemyBulletMaterial);
+                b.visible = false;
+                b.userData = { velocity: new THREE.Vector3(), birth: 0 };
+                return b;
+            },
+            (b) => {
+                b.visible = false;
+                if (!b.userData) b.userData = {};
+                if (!b.userData.velocity) b.userData.velocity = new THREE.Vector3();
+                b.userData.velocity.set(0, 0, 0);
+                b.userData.birth = 0;
+            },
+            80
+        );
+
+        // Pool para aviões inimigos (clones do protótipo)
+        const enemyAirplanePool = new ObjectPool(
+            () => {
+                if (!enemyPrototype) {
+                    // Caso excepcional: se adquirir antes do carregamento, retornar um Group vazio
+                    const g = new THREE.Group();
+                    g.visible = false;
+                    return g;
+                }
+                const clone = SkeletonUtils.clone(enemyPrototype);
+                clone.scale.set(1, 1, 1);
+                clone.rotation.order = 'YXZ';
+                clone.visible = false;
+                return clone;
+            },
+            (enemy) => {
+                enemy.visible = false;
+                // Resetar estado mínimo
+                enemy.userData = enemy.userData || {};
+                enemy.userData.dying = false;
+                enemy.userData.waypoint = null;
+                enemy.userData.verticalSpeed = 0;
+                enemy.userData.spinSpeed = 0;
+                if (enemy.userData.minimapMarker) {
+                    minimapScene.remove(enemy.userData.minimapMarker);
+                    enemy.userData.minimapMarker = null;
+                }
+            },
+            0
+        );
+
+        // Função para spawn de inimigo usando o pool
+        function spawnEnemyAt(position) {
+            const enemyAirplane = enemyAirplanePool.acquire();
+            enemyAirplane.visible = true;
+            if (!enemyAirplane.parent) scene.add(enemyAirplane);
+            enemyAirplane.position.copy(position);
+
+            const initialWaypoint = enemyCenter.clone();
+            const desiredYaw = Math.atan2(position.x - initialWaypoint.x, position.z - initialWaypoint.z);
+            enemyAirplane.rotation.y = desiredYaw;
+
+            enemyAirplane.userData = {
+                speed: 40 + Math.random() * 30,
+                turnRate: 0.6 + Math.random() * 0.7,
+                nextChangeAt: performance.now() + 2000 + Math.random() * 3000,
+                targetAltitude: position.y,
+                verticalSpeed: 0,
+                maxClimbRate: 28,
+                waypoint: initialWaypoint,
+                maxBank: 0.5 + Math.random() * 0.4,
+                bankLerp: 0.08,
+                maxPitch: 0.5,
+                role: 'random',
+                hp: THREE.MathUtils.randInt(5, 8),
+                dying: false,
+                spinSpeed: 0,
+            };
+
+            // Criar/reativar marcador do inimigo no minimapa
+            const enemyMarkerGeom = new THREE.CircleGeometry(3, 16);
+            const enemyMarkerMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
+            const enemyMarker = new THREE.Mesh(enemyMarkerGeom, enemyMarkerMat);
+            enemyMarker.rotation.x = -Math.PI / 2;
+            enemyMarker.position.y = -3.96;
+            minimapScene.add(enemyMarker);
+            enemyAirplane.userData.minimapMarker = enemyMarker;
+
+            enemyAirplanes.push(enemyAirplane);
+            return enemyAirplane;
+        }
+
         // Efeitos visuais: explosões e fumaça
         const explosions = [];
         const smokePuffs = [];
+
+        
 
         // Texture helper para flash de explosão (sprite radial leve)
         let explosionSpriteTexture = null;
@@ -985,7 +1090,7 @@ function createClouds() {
 
             // Posições aproximadas das asas relativas ao centro do avião
             const wingSpread = 4;    // afastamento lateral
-            const wingForward = 1.5;  // um pouco à frente (modelo usa -Z para frente)
+            const wingForward = -1.5;  // um pouco à frente (modelo usa -Z para frente)
             const wingHeight = -0.5;    // altura dos tiros (ajustado para levantar)
 
             const planePos = new THREE.Vector3();
@@ -998,17 +1103,16 @@ function createClouds() {
             const rightWorld = planePos.clone().add(rightOffset);
 
             const createBulletAt = (origin) => {
-                const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
+                const bullet = playerBulletPool.acquire();
+                scene.add(bullet); // Sempre adicionar à cena
+                bullet.visible = true;
                 bullet.position.copy(origin);
-                // Direção inicial até o ponto de convergência
                 const dir = targetPoint.clone().sub(origin).normalize();
-                const speed = 300; // unidades/segundo (reduzido para facilitar ver)
-                bullet.userData.velocity = dir.multiplyScalar(speed);
+                const speed = 300;
+                bullet.userData.velocity.copy(dir.multiplyScalar(speed));
                 bullet.userData.birth = performance.now();
-                bullet.userData.guided = true; // guiar nos primeiros metros para sincronizar ao virar
-                scene.add(bullet);
+                bullet.userData.guided = false;
                 bullets.push(bullet);
-      
             };
 
             createBulletAt(leftWorld);
@@ -1018,7 +1122,7 @@ function createClouds() {
         // Cadência de tiro: manter disparos sincronizados ao segurar espaço
         let shooting = false;
         let lastShotTime = 0;
-        const shotCooldownMs = 200; // taxa de disparo
+        const shotCooldownMs = 150; // taxa de disparo
         const convergenceHeightOffset = 34.0; // Ajuste vertical para o ponto de convergência
 
         document.addEventListener('keydown', (e) => {
@@ -1058,9 +1162,11 @@ function createClouds() {
 
             const delta = clock.getDelta();
             updatePlaneStateFromKeys(delta); // Chamada para atualizar o estado do avião com base nas teclas
+            const nowTime = performance.now();
+
+            // (Caminhões removidos)
 
             // Atualizar a posição e rotação dos aviões inimigos com voo aleatório dentro dos limites
-            const nowTime = performance.now();
             const enemiesToRemove = [];
 
             enemyAirplanes.forEach(enemy => {
@@ -1236,38 +1342,15 @@ function createClouds() {
                 return; // pular lógica de voo normal
 
                 }
-                // Papel do inimigo: perseguir jogador ou comportamento aleatório
+                // Papel do inimigo: voo pelo terreno com ataque por proximidade
                 const playerPos = airplane.position.clone();
-                const playerForward = new THREE.Vector3(0, 0, -1).applyQuaternion(airplane.quaternion);
                 let waypoint = ud.waypoint || randomWaypointWithinBounds();
-                if (ud.role === 'pursuit') {
-                    // Prever posição futura do jogador, manter separação e perseguir com lead
-                    const distToPlayer = enemy.position.distanceTo(playerPos);
-                    const minSep = 220; // reduzir separação mínima para perseguir mais
-                    const orbitOffset = 100; // orbitar mais apertado e menos frequente
-                    const upVec = new THREE.Vector3(0, 1, 0);
-                    const sideVec = new THREE.Vector3().crossVectors(playerForward, upVec).normalize(); // direita do jogador
-                    if (ud.orbitSide === undefined) ud.orbitSide = Math.random() < 0.5 ? 1 : -1; // escolher lado
 
-                    if (distToPlayer < minSep && distToPlayer > 80) {
-                        // Muito perto: orbitar ao redor em vez de colidir
-                        waypoint = playerPos.clone().add(sideVec.multiplyScalar(ud.orbitSide * orbitOffset));
-                        ud.targetAltitude = airplane.position.y + (ud.orbitSide * 14);
-                    } else {
-                        // Lead maior para não colar demais
-                        const lead = THREE.MathUtils.clamp(distToPlayer * 0.9, 180, 420); // menor lead: aproxima mais
-                        waypoint = playerPos.clone().add(playerForward.multiplyScalar(lead));
-                        ud.targetAltitude = airplane.position.y + THREE.MathUtils.clamp((airplane.position.y - enemy.position.y) * 0.4, -40, 40);
-                    }
-                    ud.waypoint = waypoint;
-                    ud.nextChangeAt = nowTime + 250 + Math.random() * 300; // atualiza com mais agressividade
-                } else {
-                    const distToWaypoint = enemy.position.distanceTo(waypoint);
-                    if (!ud.nextChangeAt || nowTime > ud.nextChangeAt || distToWaypoint < 60) {
-                        ud.waypoint = randomWaypointWithinBounds();
-                        ud.targetAltitude = ud.waypoint.y;
-                        ud.nextChangeAt = nowTime + 2000 + Math.random() * 4000;
-                    }
+                const distToWaypoint = enemy.position.distanceTo(waypoint);
+                if (!ud.nextChangeAt || nowTime > ud.nextChangeAt || distToWaypoint < 60) {
+                    ud.waypoint = randomWaypointWithinBounds();
+                    ud.targetAltitude = ud.waypoint.y;
+                    ud.nextChangeAt = nowTime + 2000 + Math.random() * 4000;
                 }
 
                 // Calcular yaw desejado e aplicar viragem limitada
@@ -1379,11 +1462,13 @@ function createClouds() {
                         const targetPoint = playerPos.clone().add(playerVel.clone().multiplyScalar(timeToHit));
 
                         const createEnemyBullet = (origin) => {
-                            const b = new THREE.Mesh(bulletGeometry, enemyBulletMaterial);
+                            const b = enemyBulletPool.acquire();
+                            b.visible = true;
+                            if (!b.parent) scene.add(b);
                             b.position.copy(origin);
                             const dir = targetPoint.clone().sub(origin).normalize();
-                            b.userData = { velocity: dir.multiplyScalar(speed), birth: performance.now() };
-                            scene.add(b);
+                            b.userData.velocity.copy(dir.multiplyScalar(speed));
+                            b.userData.birth = performance.now();
                             enemyBullets.push(b);
                         };
 
@@ -1401,10 +1486,11 @@ function createClouds() {
                     ud.minimapMarker.position.z = enemy.position.z;
                 }
             });
-            // Remover inimigos que colidiram com o chão
+            // Remover (reciclar) inimigos que colidiram com o chão via pool
             if (enemiesToRemove.length) {
                 enemiesToRemove.forEach(e => {
-                    scene.remove(e);
+                    e.visible = false;
+                    enemyAirplanePool.release(e);
                     const idx = enemyAirplanes.indexOf(e);
                     if (idx !== -1) enemyAirplanes.splice(idx, 1);
                 });
@@ -1606,26 +1692,20 @@ function createClouds() {
                 // Movimento baseado em velocidade (unidades/segundo)
                 const vel = b.userData.velocity;
 
-                // Enquanto estiver perto do avião, ajuste a direção para o ponto à frente do nariz
-                const planePos = airplane.position;
-                const distToPlane = b.position.distanceTo(planePos);
-                if (b.userData.guided && distToPlane < 40) {
-                    const forwardWorld = new THREE.Vector3(0, 0, -1).applyQuaternion(airplane.quaternion); // nariz do avião usa -Z
-                    const targetPoint = planePos.clone().add(forwardWorld.multiplyScalar(300));
-                    targetPoint.y += convergenceHeightOffset; // Aplica o offset vertical
-                    const speed = vel.length();
-                    const newDir = targetPoint.clone().sub(b.position).normalize();
-                    b.userData.velocity.copy(newDir.multiplyScalar(speed));
-                } else {
-                    b.userData.guided = false;
-                }
+                // Movimento simples: manter velocidade e direção definidas no disparo
 
                 b.position.addScaledVector(vel, delta);
+                let bulletRemoved = false; // Flag para indicar se o projétil foi removido por colisão
+
                 // Checar colisão com inimigos
                 for (let j = 0; j < enemyAirplanes.length; j++) {
                     const enemy = enemyAirplanes[j];
                     if (!enemy || !enemy.userData || enemy.userData.dying) continue;
-                    const dist = b.position.distanceTo(enemy.position);
+                    const bulletWorldPos = new THREE.Vector3();
+                    b.getWorldPosition(bulletWorldPos);
+                    const enemyWorldPos = new THREE.Vector3();
+                    enemy.getWorldPosition(enemyWorldPos);
+                    const dist = bulletWorldPos.distanceTo(enemyWorldPos);
                     if (dist < 3) {
                         // Acertou: explosão e dano
                         createExplosion(enemy.position); // impacto padrão
@@ -1647,16 +1727,28 @@ function createClouds() {
                             // Explosão um pouco maior no tiro fatal (mesmo efeito, escalado)
                             createExplosion(enemy.position, 2.4);
                         }
-                        // remover projétil
-                        scene.remove(b);
+                        // reciclar projétil
+                        scene.remove(b); // Remover explicitamente da cena
+                        b.visible = false; // Garantir que o projétil não seja visível
+                        playerBulletPool.release(b);
                         bullets.splice(i, 1);
-                        break;
+                        // console.log(`Bullet removed after enemy collision. Index: ${i}`);
+                        bulletRemoved = true; // Define a flag
+                        break; // Sai do loop interno (inimigos)
                     }
                 }
+
+                if (bulletRemoved) {
+                    continue; // Pula para o próximo projétil no loop externo
+                }
+
                 // Remover após 5 segundos
                 if (now - b.userData.birth > 5000) {
                     scene.remove(b);
+                    b.visible = false;
+                    playerBulletPool.release(b);
                     bullets.splice(i, 1);
+                    // console.log(`Bullet removed by lifespan. Index: ${i}`);
                 }
             }
 
@@ -1686,14 +1778,16 @@ function createClouds() {
                         planeState.deadAt = performance.now();
                         createPlayerExplosion(airplane.position, 3.0);
                     }
-                    scene.remove(eb);
+                    eb.visible = false;
+                    enemyBulletPool.release(eb);
                     enemyBullets.splice(i, 1);
                     continue;
                 }
 
                 // Tempo de vida
                 if (now - eb.userData.birth > 4500) {
-                    scene.remove(eb);
+                    eb.visible = false;
+                    enemyBulletPool.release(eb);
                     enemyBullets.splice(i, 1);
                 }
             }
