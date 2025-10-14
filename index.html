@@ -76,7 +76,7 @@
             z-index: 2000;
         }
         #game-over .text {
-            color: #fff;
+            color: #db0a0a;
             font-size: 64px;
             font-weight: 800;
             letter-spacing: 2px;
@@ -111,6 +111,10 @@
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
         camera.position.set(0, 0.9, 1.05); // Posição da câmera relativa ao avião (atrás e acima)
         camera.lookAt(0, 0, -15); // A câmera deve olhar para a frente do avião
+        // Base para shake da câmera
+        camera.userData.basePosition = camera.position.clone();
+        camera.userData.baseRotation = camera.rotation.clone();
+        camera.userData.shake = null;
        
         
         // scene.add(camera); // Removido: a câmera será adicionada como filho do avião
@@ -435,7 +439,7 @@ function createClouds() {
                     if (!e || !e.userData) return;
                     e.userData.role = 'pursuit';
                     e.userData.turnRate = (e.userData.turnRate || 0.6) * 1.4; // virar mais rápido
-                    e.userData.maxBank = Math.max(e.userData.maxBank || 0.5, 0.9); // inclinar mais
+                    e.userData.maxBank = Math.max(e.userData.maxBank || 0.5, 0.8); // inclinar mais
                     e.userData.maxClimbRate = Math.max(e.userData.maxClimbRate || 20, 35); // subir/mergulhar mais
                     e.userData.bankLerp = Math.max(e.userData.bankLerp || 0.05, 0.12);
                     e.userData.maxPitch = 0.7; // nariz mais agressivo
@@ -867,8 +871,8 @@ function createClouds() {
             speed: -20, // Velocidade inicial
             altitude: 1000, // Altitude inicial
             fuel: 100, // Combustível inicial
-            health: 8, // Vida inicial (tiros que pode levar)
-            healthMax: 8, // Máximo de vida
+            health: 15, // Vida inicial (tiros que pode levar)
+            healthMax: 15, // Máximo de vida
             rotation: 0, // Rotação Y (yaw)
             pitch: 0, // Rotação X (pitch)
             roll: 0, // Rotação Z (roll)
@@ -891,6 +895,12 @@ function createClouds() {
             update: () => { /* No-op para esta implementação */ }
         };
         // --- Fim da nova lógica baseada em simulador trae.txt ---
+
+        // --- Shake da câmera ---
+        function triggerCameraShake(magnitude = 0.02, durationMs = 150) {
+            const now = performance.now();
+            camera.userData.shake = { start: now, end: now + durationMs, mag: magnitude, dur: durationMs };
+        }
 
         // --- Funções de controle baseadas em simulador trae.txt ---
         const keyStates = {
@@ -1233,24 +1243,24 @@ function createClouds() {
                 if (ud.role === 'pursuit') {
                     // Prever posição futura do jogador, manter separação e perseguir com lead
                     const distToPlayer = enemy.position.distanceTo(playerPos);
-                    const minSep = 360; // distância mínima segura (maior)
-                    const orbitOffset = 180; // raio lateral quando muito perto (dobrado)
+                    const minSep = 220; // reduzir separação mínima para perseguir mais
+                    const orbitOffset = 100; // orbitar mais apertado e menos frequente
                     const upVec = new THREE.Vector3(0, 1, 0);
                     const sideVec = new THREE.Vector3().crossVectors(playerForward, upVec).normalize(); // direita do jogador
                     if (ud.orbitSide === undefined) ud.orbitSide = Math.random() < 0.5 ? 1 : -1; // escolher lado
 
-                    if (distToPlayer < minSep) {
+                    if (distToPlayer < minSep && distToPlayer > 80) {
                         // Muito perto: orbitar ao redor em vez de colidir
                         waypoint = playerPos.clone().add(sideVec.multiplyScalar(ud.orbitSide * orbitOffset));
-                        ud.targetAltitude = airplane.position.y + (ud.orbitSide * 12);
+                        ud.targetAltitude = airplane.position.y + (ud.orbitSide * 14);
                     } else {
                         // Lead maior para não colar demais
-                        const lead = THREE.MathUtils.clamp(distToPlayer * 1.2, 240, 520);
+                        const lead = THREE.MathUtils.clamp(distToPlayer * 0.9, 180, 420); // menor lead: aproxima mais
                         waypoint = playerPos.clone().add(playerForward.multiplyScalar(lead));
                         ud.targetAltitude = airplane.position.y + THREE.MathUtils.clamp((airplane.position.y - enemy.position.y) * 0.4, -40, 40);
                     }
                     ud.waypoint = waypoint;
-                    ud.nextChangeAt = nowTime + 400 + Math.random() * 400; // atualiza com mais frequência
+                    ud.nextChangeAt = nowTime + 250 + Math.random() * 300; // atualiza com mais agressividade
                 } else {
                     const distToWaypoint = enemy.position.distanceTo(waypoint);
                     if (!ud.nextChangeAt || nowTime > ud.nextChangeAt || distToWaypoint < 60) {
@@ -1268,7 +1278,7 @@ function createClouds() {
                 const yawStep = THREE.MathUtils.clamp(yawError, -maxYawStep, maxYawStep);
                 // Aumentar raio de curva quando muito próximo do jogador
                 const distCloseYaw = enemy.position.distanceTo(airplane.position);
-                const minSepYaw = 360;
+                const minSepYaw = 240; // reduzir separação para curvar mais agressivo perto
                 const yawScale = (ud.role === 'pursuit' && distCloseYaw < minSepYaw)
                     ? THREE.MathUtils.clamp(distCloseYaw / minSepYaw, 0.35, 1)
                     : 1;
@@ -1278,7 +1288,7 @@ function createClouds() {
                 const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(enemy.quaternion);
                 // Velocidade original (sem ajustes por pitch ou proximidade)
                 const distToPlayerMove = enemy.position.distanceTo(airplane.position);
-                const minSepMove = 280; // manter separação para lógica de repulsão abaixo
+                const minSepMove = 180; // permitir aproximação maior
                 enemy.position.addScaledVector(forwardVector, (ud.speed || ud.speed) * delta);
 
                 // Repulsão suave quando muito próximo do jogador (evita colisões frontais)
@@ -1286,7 +1296,7 @@ function createClouds() {
                     const toPlayer = playerPos.clone().sub(enemy.position);
                     const away = toPlayer.multiplyScalar(-1).normalize();
                     const closeFactor = THREE.MathUtils.clamp((minSepMove - distToPlayerMove) / minSepMove, 0, 1);
-                    const avoidanceStrength = 80; // força base da repulsão
+                    const avoidanceStrength = 120; // força base da repulsão
                     enemy.position.addScaledVector(away, avoidanceStrength * closeFactor * delta);
                 }
 
@@ -1338,10 +1348,10 @@ function createClouds() {
                 }
 
                 // Disparo do inimigo: somente quando estiver em distância razoável e alinhado
-                // Parâmetros de ataque (ajustados para melhorar acerto)
-                ud.attackRange = ud.attackRange || 800; // engajar um pouco mais longe
-                ud.fireAngle = ud.fireAngle || 0.4; // janela frontal mantida
-                ud.fireCooldownMs = ud.fireCooldownMs || 180; // atirar mais frequentemente
+                // Parâmetros de ataque (mais agressivos)
+                ud.attackRange = ud.attackRange || 600; // engajar mais longe
+                ud.fireAngle = ud.fireAngle || 0.5; // janela frontal mais ampla
+                ud.fireCooldownMs = ud.fireCooldownMs || 200; // menor cooldown
                 ud.nextFireAt = ud.nextFireAt || 0;
 
                 const toPlayerVec = playerPos.clone().sub(enemy.position);
@@ -1363,7 +1373,7 @@ function createClouds() {
                         // Mira com interceptação: estima posição futura do jogador
                         const speed = 360; // velocidade do projétil (unid/s)
                         const moveDir = new THREE.Vector3(0, 0, 1).applyQuaternion(airplane.quaternion); // direção de movimento do jogador
-                        const playerSpeedApprox = Math.abs(planeState.speed) * 0.6; // ~unid/s (speed -100 ≈ 60 unid/s)
+                        const playerSpeedApprox = Math.abs(planeState.speed) * 0.4; // ~unid/s (speed -100 ≈ 60 unid/s)
                         const playerVel = moveDir.multiplyScalar(playerSpeedApprox);
                         const timeToHit = Math.min(distToPlayerShoot / speed, 1.5);
                         const targetPoint = playerPos.clone().add(playerVel.clone().multiplyScalar(timeToHit));
@@ -1432,7 +1442,7 @@ function createClouds() {
                 // Consumo de combustível corrigido (usa velocidade absoluta)
                 const speedAbs = Math.abs(planeState.speed);
                 if (planeState.fuel > 0 && speedAbs > 2) {
-                    planeState.fuel -= 0.008 * (speedAbs / 100);
+                    planeState.fuel -= 0.005 * (speedAbs / 100);
                     planeState.fuel = Math.max(planeState.fuel, 0);
                 } else if (planeState.fuel <= 0) {
                     // Sem combustível: reduzir velocidade em direção a 0 e baixar nariz
@@ -1467,7 +1477,7 @@ function createClouds() {
 
                 // Condição de Stall: se a velocidade for muito baixa, o avião perde altitude
                 if (planeState.speed >= -20) {
-                    airplane.position.y -= 0.02; // Perde altitude
+                    airplane.position.y -= 0.01; // Perde altitude
                 }
 
                 // Garante que o avião não passe do chão, a menos que esteja subindo
@@ -1576,6 +1586,8 @@ function createClouds() {
                     airplane.position.y = groundY + 0.0;
                     planeState.verticalSpeed = 0;
                     planeState.horizontalSpeed = 0;
+                    planeState.speed = 0;
+                    planeState.altitude = 0;
                     planeState.dyingState = 'crashed';
                 }
             }
@@ -1597,7 +1609,7 @@ function createClouds() {
                 // Enquanto estiver perto do avião, ajuste a direção para o ponto à frente do nariz
                 const planePos = airplane.position;
                 const distToPlane = b.position.distanceTo(planePos);
-                if (b.userData.guided && distToPlane < 80) {
+                if (b.userData.guided && distToPlane < 40) {
                     const forwardWorld = new THREE.Vector3(0, 0, -1).applyQuaternion(airplane.quaternion); // nariz do avião usa -Z
                     const targetPoint = planePos.clone().add(forwardWorld.multiplyScalar(300));
                     targetPoint.y += convergenceHeightOffset; // Aplica o offset vertical
@@ -1665,6 +1677,8 @@ function createClouds() {
                     const hitPos = airplane.position.clone().add(sideOffset).add(new THREE.Vector3(0, 0.4, 0));
                     // Substituir clarão lateral por clarão em frente à câmera
                     createCameraHitFlash(1);
+                    // Tranco na câmera no impacto
+                    triggerCameraShake(0.02, 150);
                     planeState.health = Math.max(planeState.health - 1, 0);
                     // Efeito de morte simples ao zerar vida
                     if (planeState.health === 0 && !planeState.dead) {
@@ -1790,6 +1804,32 @@ function createClouds() {
                     const go = document.getElementById('game-over');
                     if (go) go.style.display = 'flex';
                     planeState.gameOverShown = true;
+                }
+            }
+
+            // Aplicar shake da câmera (local ao avião)
+            if (camera.userData.shake) {
+                const nowShake = now;
+                const sh = camera.userData.shake;
+                if (nowShake < sh.end) {
+                    const t = (sh.end - nowShake) / sh.dur; // decaimento 1->0
+                    // Offset aleatório pequeno em XYZ
+                    const ox = (Math.random() - 0.5) * 2 * sh.mag * t;
+                    const oy = (Math.random() - 0.5) * 2 * sh.mag * t;
+                    const oz = (Math.random() - 0.5) * 2 * sh.mag * t;
+                    camera.position.copy(camera.userData.basePosition).addScalar(0); // garantir base
+                    camera.position.x += ox;
+                    camera.position.y += oy;
+                    camera.position.z += oz;
+                    // Pequena vibração angular
+                    camera.rotation.x = camera.userData.baseRotation.x + (Math.random() - 0.5) * 0.02 * t;
+                    camera.rotation.y = camera.userData.baseRotation.y + (Math.random() - 0.5) * 0.02 * t;
+                    camera.rotation.z = camera.userData.baseRotation.z + (Math.random() - 0.5) * 0.02 * t;
+                } else {
+                    // Restaurar base e encerrar shake
+                    camera.position.copy(camera.userData.basePosition);
+                    camera.rotation.copy(camera.userData.baseRotation);
+                    camera.userData.shake = null;
                 }
             }
 
