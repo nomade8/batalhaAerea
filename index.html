@@ -109,7 +109,7 @@
         ambientLight.needsUpdate = false;
         scene.add(ambientLight);
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
         camera.position.set(0, 0.9, 1.05); // Posição da câmera relativa ao avião (atrás e acima)
         camera.lookAt(0, 0, -15); // A câmera deve olhar para a frente do avião
         // Base para shake da câmera
@@ -1375,13 +1375,13 @@ function createClouds() {
                 enemy.position.addScaledVector(forwardVector, (ud.speed || ud.speed) * delta);
 
                 // Repulsão suave quando muito próximo do jogador (evita colisões frontais)
-                if (ud.role === 'pursuit' && distToPlayerMove < minSepMove) {
-                    const toPlayer = playerPos.clone().sub(enemy.position);
-                    const away = toPlayer.multiplyScalar(-1).normalize();
-                    const closeFactor = THREE.MathUtils.clamp((minSepMove - distToPlayerMove) / minSepMove, 0, 1);
-                    const avoidanceStrength = 120; // força base da repulsão
-                    enemy.position.addScaledVector(away, avoidanceStrength * closeFactor * delta);
-                }
+                // if (ud.role === 'pursuit' && distToPlayerMove < minSepMove) {
+                //     const toPlayer = playerPos.clone().sub(enemy.position);
+                //     const away = toPlayer.clone().sub(enemy.position).normalize();
+                //     const closeFactor = THREE.MathUtils.clamp((minSepMove - distToPlayerMove) / minSepMove, 0, 1);
+                //     const avoidanceStrength = 120; // força base da repulsão
+                //     enemy.position.addScaledVector(away, avoidanceStrength * closeFactor * delta);
+                // }
 
                 // Leve deriva aleatória apenas no voo normal, usando tempo em segundos
                 const tSec = nowTime * 0.001;
