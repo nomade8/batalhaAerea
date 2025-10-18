@@ -83,11 +83,61 @@
             text-shadow: 0 0 12px rgba(255,255,255,0.8);
             font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
+        /* Modal de avanço de fase */
+        #level-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: none;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 20px;
+            background: rgba(0,0,0,0.2);
+            z-index: 2000;
+        }
+        #level-modal .panel {
+            background: rgba(20,20,20,0.92);
+            padding: 24px 28px;
+            border-radius: 14px;
+            color: #fff;
+            text-align: center;
+            min-width: 300px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+        }
+        #level-modal .panel h2 {
+            margin: 0 0 12px 0;
+            font-size: 22px;
+        }
+        #level-modal .panel p {
+            margin: 0 0 16px 0;
+            opacity: 0.85;
+        }
+        #level-modal .panel button {
+            background: #2ecc71;
+            border: none;
+            color: #fff;
+            font-size: 16px;
+            padding: 10px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        #level-modal .panel button:hover {
+            background: #27ae60;
+        }
     </style>
 </head>
 <body>
     <div id="hud"></div>
     <div id="game-over"><div class="text">GAME OVER</div></div>
+    <div id="level-modal">
+        <div class="panel">
+            <h2>Fase concluída</h2>
+            <p>Pouso confirmado. Clique para iniciar a próxima fase.</p>
+            <button id="start-next-level">Iniciar próxima fase</button>
+        </div>
+    </div>
     <script type="importmap">
         {
             "imports": {
@@ -485,6 +535,41 @@ function createClouds() {
             const hudAltitudeValue = document.getElementById('hud-altitude-value');
         const hudFuelFill = document.getElementById('hud-fuel-fill');
         const hudHealthFill = document.getElementById('hud-health-fill');
+
+        // --- Modal e gerenciamento de fases ---
+        const levelModal = document.getElementById('level-modal');
+        const startNextBtn = document.getElementById('start-next-level');
+        let currentLevel = 1;
+        let awaitingNextLevel = false;
+
+        function showLevelModal() {
+            if (levelModal) levelModal.style.display = 'flex';
+        }
+        function hideLevelModal() {
+            if (levelModal) levelModal.style.display = 'none';
+        }
+        function startNextLevel() {
+            currentLevel++;
+            hideLevelModal();
+            awaitingNextLevel = false;
+            ensureEnemyPrototype().then(() => {
+                spawnEnemyAt(randomCornerSpawn());
+                spawnEnemyAt(randomCornerSpawn());
+                spawnEnemyAt(randomCornerSpawn());
+                spawnEnemyAt(randomCornerSpawn());
+                spawnEnemyAt(randomCornerSpawn());
+                const pursuers = enemyAirplanes.slice(0, 3);
+                pursuers.forEach((e) => {
+                    if (!e || !e.userData) return;
+                    e.userData.role = 'pursuit';
+                    e.userData.turnRate = (e.userData.turnRate || 0.6) * 1.4;
+                    e.userData.maxBank = Math.max(e.userData.maxBank || 0.5, 0.8);
+                    e.userData.bankLerp = Math.max(e.userData.bankLerp || 0.05, 0.12);
+                    e.userData.maxPitch = 0.7;
+                });
+            }).catch(err => console.error('Erro ao iniciar próxima fase:', err));
+        }
+        if (startNextBtn) startNextBtn.addEventListener('click', startNextLevel);
 
         // Variáveis para suavização (estas serão substituídas pela lógica do planeState)
         // const clock = new THREE.Clock(); // Já existe
@@ -1054,8 +1139,8 @@ function createClouds() {
             if (isGrounded) {
                 // No solo: usar aceleração/frenagem gradual (em vez de LERP) para realismo
                 const groundAccel = 18;   // aceleração no solo (unid/s²)
-                const groundBrake = 120;   // frenagem no solo (unid/s²)
-                const groundDrag = 8;     // arrasto quando sem throttle
+                const groundBrake = 440;   // frenagem no solo (unid/s²)
+                const groundDrag = 40;     // arrasto quando sem throttle
 
                 if (planeState.isSpeedingUp) {
                     // Acelerar: tornar speed mais negativo gradualmente até maxSpeed
@@ -1090,8 +1175,8 @@ function createClouds() {
 
             // Posições aproximadas das asas relativas ao centro do avião
             const wingSpread = 4;    // afastamento lateral
-            const wingForward = -1.5;  // um pouco à frente (modelo usa -Z para frente)
-            const wingHeight = -0.5;    // altura dos tiros (ajustado para levantar)
+            const wingForward = 0.5;  // um pouco à frente (modelo usa -Z para frente)
+            const wingHeight = -1.5;    // altura dos tiros (ajustado para levantar)
 
             const planePos = new THREE.Vector3();
             airplane.getWorldPosition(planePos);
@@ -1123,7 +1208,7 @@ function createClouds() {
         let shooting = false;
         let lastShotTime = 0;
         const shotCooldownMs = 150; // taxa de disparo
-        const convergenceHeightOffset = 34.0; // Ajuste vertical para o ponto de convergência
+        const convergenceHeightOffset = 38.0; // Ajuste vertical para o ponto de convergência
 
         document.addEventListener('keydown', (e) => {
             const isSpace = e.code === 'z' || e.key === ' ' || e.key === 'z';
@@ -1581,6 +1666,12 @@ function createClouds() {
                     planeState.health = planeState.healthMax || 8;
                 }
                 planeState.wasGrounded = isGroundedNow;
+
+                // Avanço de fase: pouso + nenhum inimigo ativo
+                if (!planeState.dead && planeState.wasGrounded && enemyAirplanes.length === 0 && !awaitingNextLevel) {
+                    awaitingNextLevel = true;
+                    showLevelModal();
+                }
 
 
                 // Atualizar a câmera para seguir o avião (não mais necessário, pois é filho)
