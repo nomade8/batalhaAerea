@@ -34,7 +34,7 @@
             left: 50%;
             width: 20px;
             height: 20px;
-            margin-top: -110px; /* Metade da altura */
+            margin-top: -150px; /* Metade da altura */
             margin-left: -10px; /* Metade da largura */
             border: 1px solid white;
             border-radius: 50%;
@@ -1168,13 +1168,13 @@ function createClouds() {
             if (!airplane) return;
 
             // Mira: ponto à frente do nariz do avião (usa eixo +Z local)
-            const convergenceDistance = 300; // distância de convergência
+            const convergenceDistance = 200; // distância de convergência
             const forwardWorld = new THREE.Vector3(0, 0, -1).applyQuaternion(airplane.quaternion); // nariz do avião usa -Z
             const targetPoint = airplane.position.clone().add(forwardWorld.multiplyScalar(convergenceDistance));
             targetPoint.y += convergenceHeightOffset; // Aplica o offset vertical
 
             // Posições aproximadas das asas relativas ao centro do avião
-            const wingSpread = 4;    // afastamento lateral
+            const wingSpread = 5;    // afastamento lateral
             const wingForward = 0.5;  // um pouco à frente (modelo usa -Z para frente)
             const wingHeight = -1.5;    // altura dos tiros (ajustado para levantar)
 
@@ -1208,7 +1208,7 @@ function createClouds() {
         let shooting = false;
         let lastShotTime = 0;
         const shotCooldownMs = 150; // taxa de disparo
-        const convergenceHeightOffset = 38.0; // Ajuste vertical para o ponto de convergência
+        const convergenceHeightOffset = 34.0; // Ajuste vertical para o ponto de convergência
 
         document.addEventListener('keydown', (e) => {
             const isSpace = e.code === 'z' || e.key === ' ' || e.key === 'z';
