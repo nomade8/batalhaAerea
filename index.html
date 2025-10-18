@@ -152,6 +152,7 @@
         import { KTX2Loader } from 'https://unpkg.com/three@0.164.1/examples/jsm/loaders/KTX2Loader.js';
         import { Sky } from 'three/addons/objects/Sky.js';
         import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+        import { AudioListener, Audio, AudioLoader } from 'three';
 
         const scene = new THREE.Scene();
 
@@ -166,6 +167,24 @@
         camera.userData.basePosition = camera.position.clone();
         camera.userData.baseRotation = camera.rotation.clone();
         camera.userData.shake = null;
+
+        // Áudio
+        const listener = new THREE.AudioListener();
+        camera.add(listener);
+
+        const audioLoader = new THREE.AudioLoader();
+        const explosionSound = new THREE.Audio(listener);
+        const playerShotSound = new THREE.Audio(listener);
+
+        audioLoader.load('explosion_realistic.mp3', function(buffer) {
+            explosionSound.setBuffer(buffer);
+            explosionSound.setVolume(0.5);
+        });
+
+        audioLoader.load('tiroplane.mp3', function(buffer) {
+            playerShotSound.setBuffer(buffer);
+            playerShotSound.setVolume(0.3);
+        });
        
         
         // scene.add(camera); // Removido: a câmera será adicionada como filho do avião
@@ -1008,6 +1027,10 @@ function createClouds() {
 
         // Explosão aprimorada no chão (múltiplos puffs + onda de choque)
         function createGroundExplosion(position) {
+            if (explosionSound.isPlaying) {
+                explosionSound.stop();
+            }
+            explosionSound.play();
             const base = position.clone();
             const groundY = getGroundHeightAt(base.x, base.z);
             base.y = groundY + 0.05;
@@ -1198,6 +1221,8 @@ function createClouds() {
                 bullet.userData.birth = performance.now();
                 bullet.userData.guided = false;
                 bullets.push(bullet);
+                playerShotSound.stop(); // Parar para permitir que o som seja reproduzido novamente se já estiver tocando
+                playerShotSound.play();
             };
 
             createBulletAt(leftWorld);
