@@ -34,7 +34,7 @@
             left: 50%;
             width: 20px;
             height: 20px;
-            margin-top: -150px; /* Metade da altura */
+            margin-top: -135px; /* Metade da altura */
             margin-left: -10px; /* Metade da largura */
             border: 1px solid white;
             border-radius: 50%;
@@ -1168,7 +1168,7 @@ function createClouds() {
             if (!airplane) return;
 
             // Mira: ponto à frente do nariz do avião (usa eixo +Z local)
-            const convergenceDistance = 200; // distância de convergência
+            const convergenceDistance = 250; // distância de convergência
             const forwardWorld = new THREE.Vector3(0, 0, -1).applyQuaternion(airplane.quaternion); // nariz do avião usa -Z
             const targetPoint = airplane.position.clone().add(forwardWorld.multiplyScalar(convergenceDistance));
             targetPoint.y += convergenceHeightOffset; // Aplica o offset vertical
