@@ -183,7 +183,7 @@
 
         audioLoader.load('tiroplane.mp3', function(buffer) {
             playerShotSound.setBuffer(buffer);
-            playerShotSound.setVolume(0.3);
+            playerShotSound.setVolume(0.2);
         });
        
         
@@ -1030,6 +1030,7 @@ function createClouds() {
             if (explosionSound.isPlaying) {
                 explosionSound.stop();
             }
+            explosionSound.setVolume(0.1);
             explosionSound.play();
             const base = position.clone();
             const groundY = getGroundHeightAt(base.x, base.z);
@@ -1842,6 +1843,12 @@ function createClouds() {
 
                             // Explosão um pouco maior no tiro fatal (mesmo efeito, escalado)
                             createExplosion(enemy.position, 2.4);
+                            // Som de explosão mais baixo para tiro fatal no ar
+                            explosionSound.setVolume(0.3);
+                            if (explosionSound.isPlaying) {
+                                explosionSound.stop();
+                            }
+                            explosionSound.play();
                         }
                         // reciclar projétil
                         scene.remove(b); // Remover explicitamente da cena
