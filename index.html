@@ -175,6 +175,7 @@
         const audioLoader = new THREE.AudioLoader();
         const explosionSound = new THREE.Audio(listener);
         const playerShotSound = new THREE.Audio(listener);
+        const engineSound = new THREE.Audio(listener);
 
         audioLoader.load('explosion_realistic.mp3', function(buffer) {
             explosionSound.setBuffer(buffer);
@@ -184,6 +185,12 @@
         audioLoader.load('tiroplane.mp3', function(buffer) {
             playerShotSound.setBuffer(buffer);
             playerShotSound.setVolume(0.2);
+        });
+
+        audioLoader.load('continuo.mp3', function(buffer) {
+            engineSound.setBuffer(buffer);
+            engineSound.setLoop(true);
+            engineSound.setVolume(0.7);
         });
        
         
@@ -1274,6 +1281,20 @@ function createClouds() {
             const delta = clock.getDelta();
             updatePlaneStateFromKeys(delta); // Chamada para atualizar o estado do avião com base nas teclas
             const nowTime = performance.now();
+
+            // Controle do som contínuo do avião: toca em loop enquanto velocidade < 0 e não está morto
+            if (engineSound && engineSound.buffer) {
+                const shouldPlayEngine = (!planeState.dead && planeState.speed < 0);
+                if (shouldPlayEngine) {
+                    if (!engineSound.isPlaying) {
+                        engineSound.play();
+                    }
+                } else {
+                    if (engineSound.isPlaying) {
+                        engineSound.stop();
+                    }
+                }
+            }
 
             // (Caminhões removidos)
 
