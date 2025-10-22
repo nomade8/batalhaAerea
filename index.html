@@ -514,7 +514,7 @@ function createClouds() {
                 pursuers.forEach((e) => {
                     if (!e || !e.userData) return;
                     e.userData.role = 'pursuit';
-                    e.userData.turnRate = (e.userData.turnRate || 0.6) * 1.4; // virar mais rápido
+                    e.userData.turnRate = (e.userData.turnRate || 0.6) * 1.0; // virar mais rápido
                     e.userData.maxBank = Math.max(e.userData.maxBank || 0.5, 0.8); // inclinar mais
                     e.userData.maxClimbRate = Math.max(e.userData.maxClimbRate || 20, 35); // subir/mergulhar mais
                     e.userData.bankLerp = Math.max(e.userData.bankLerp || 0.05, 0.12);
@@ -778,7 +778,7 @@ function createClouds() {
             enemyAirplane.rotation.y = desiredYaw;
 
             enemyAirplane.userData = {
-                speed: 40 + Math.random() * 30,
+                speed: 40 + Math.random() * 25,
                 turnRate: 0.6 + Math.random() * 0.7,
                 nextChangeAt: performance.now() + 2000 + Math.random() * 3000,
                 targetAltitude: position.y,
@@ -1199,13 +1199,13 @@ function createClouds() {
             if (!airplane) return;
 
             // Mira: ponto à frente do nariz do avião (usa eixo +Z local)
-            const convergenceDistance = 250; // distância de convergência
+            const convergenceDistance = 300; // distância de convergência
             const forwardWorld = new THREE.Vector3(0, 0, -1).applyQuaternion(airplane.quaternion); // nariz do avião usa -Z
             const targetPoint = airplane.position.clone().add(forwardWorld.multiplyScalar(convergenceDistance));
             targetPoint.y += convergenceHeightOffset; // Aplica o offset vertical
 
             // Posições aproximadas das asas relativas ao centro do avião
-            const wingSpread = 5;    // afastamento lateral
+            const wingSpread = 4;    // afastamento lateral
             const wingForward = 0.5;  // um pouco à frente (modelo usa -Z para frente)
             const wingHeight = -1.5;    // altura dos tiros (ajustado para levantar)
 
