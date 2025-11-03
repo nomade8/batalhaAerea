@@ -507,7 +507,7 @@ function createClouds() {
                         truck.userData = {
                             health: 10,
                             isHit: false,
-                            truckSpeed: 0.3,
+                            truckSpeed: 0.2,
                             truckDirection: new THREE.Vector3(),
                             truckTurnInterval: 0,
                             lastTruckTurnTime: 0,
@@ -779,7 +779,8 @@ function createClouds() {
         let trucks = [];
             let truckPool; // Declarar truckPool globalmente
             let truckBaseModel; // Declarar truckBaseModel globalmente
-        let propeller = null; // Variável para armazenar a hélice
+            let truckExplosionScale = 2; // Fator de escala para a explosão do caminhão
+            let propeller = null; // Variável para armazenar a hélice
         let propellerSpeed = 0.5; // Velocidade inicial da hélice
         const cameraOffset = new THREE.Vector3(0, 0.8, -2); // Offset da câmera em relação ao avião ajustado para primeira pessoa
 
@@ -2044,7 +2045,7 @@ function createClouds() {
                     const truckWorldPos = new THREE.Vector3();
                     currentTruck.getWorldPosition(truckWorldPos);
                     const distanceToTruck = bulletWorldPos.distanceTo(truckWorldPos);
-                    const truckCollisionRadius = 4; // Ajuste conforme o tamanho do caminhão
+                    const truckCollisionRadius = 5; // Ajuste conforme o tamanho do caminhão
 
                     if (distanceToTruck < truckCollisionRadius) {
                         currentTruck.userData.health--;
@@ -2054,8 +2055,8 @@ function createClouds() {
                         }
 
                         if (currentTruck && currentTruck.userData.health <= 0) {
-                            console.log('Caminhão destruído na posição:', currentTruck.position, 'após', 10 - currentTruck.userData.health, 'tiros!');
-                            createGroundExplosion(currentTruck.position); // Garante que a explosão seja criada antes de liberar o caminhão
+                            
+                            createGroundExplosion(currentTruck.position, truckExplosionScale); // Garante que a explosão seja criada antes de liberar o caminhão
                             truckPool.release(currentTruck); // Libera o caminhão de volta para o pool
                             trucks.splice(k, 1); // Remove o caminhão destruído do array de caminhões ativos
                         }
