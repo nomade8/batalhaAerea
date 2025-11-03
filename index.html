@@ -494,7 +494,7 @@ function createClouds() {
             minimapAirplane = new THREE.Mesh(triangleGeometry, triangleMaterial);
             minimapAirplane.name = 'airplane_clone';
 
-            let truckBaseModel; // Variável global para armazenar o modelo base do caminhão
+
 
             loader.load('caminhaoBom.glb', (gltf) => {
                 truckBaseModel = gltf.scene; // Armazena o modelo base
@@ -518,7 +518,7 @@ function createClouds() {
                     (truck) => {
                         truck.visible = false;
                         if (truck.parent) scene.remove(truck);
-                        truck.health = 5;
+                        truck.health = 10;
                         truck.isHit = false;
                         truck.userData.truckSpeed = 0.3;
                         truck.userData.truckDirection.set(0, 0, 0);
@@ -526,7 +526,7 @@ function createClouds() {
                         truck.userData.lastTruckTurnTime = 0;
                         truck.userData.truckBoundary = 500;
                     },
-                    4 // Tamanho inicial do pool
+                    10 // Aumentando o tamanho inicial do pool para 10
                 );
 
                 // Criação inicial dos caminhões usando o pool
@@ -637,12 +637,55 @@ function createClouds() {
             currentLevel++;
             hideLevelModal();
             awaitingNextLevel = false;
-            ensureEnemyPrototype().then(() => {
+            
+            console.log("Iniciando fase", currentLevel);
+            
+            // Função para criar caminhões para o nível atual
+            function createTrucksForLevel() {
+                console.log("Criando caminhões para fase", currentLevel);
+                // Criar novos caminhões para a fase atual
+                for (let i = 0; i < 5; i++) {
+                    try {
+                        const truck = truckPool.acquire();
+                        if (!truck) {
+                            console.error("Falha ao adquirir caminhão do pool");
+                            continue;
+                        }
+                        truck.visible = true; // Garantir que está visível
+                        truck.position.set(Math.random() * 800 - 400, 0, Math.random() * 800 - 400);
+                        truck.userData.truckDirection.set(Math.random() * 2 - 1, 0, Math.random() * 2 - 1).normalize();
+                        truck.userData.truckTurnInterval = 5000 + Math.random() * 5000;
+                        truck.userData.lastTruckTurnTime = performance.now();
+                        scene.add(truck);
+                        trucks.push(truck);
+                        console.log("Caminhão criado e adicionado à cena");
+                    } catch (error) {
+                        console.error("Erro ao criar caminhão:", error);
+                    }
+                }
+                console.log("Total de caminhões criados:", trucks.length);
+            }
+            
+            // Função para limpar caminhões antigos
+            function clearTrucks() {
+                console.log("Limpando caminhões antigos, total:", trucks.length);
+                for (let i = trucks.length - 1; i >= 0; i--) {
+                    if (trucks[i]) {
+                        truckPool.release(trucks[i]);
+                    }
+                }
+                trucks = [];
+            }
+            
+            // Função para criar inimigos
+            function createEnemies() {
+                console.log("Criando aviões inimigos para fase", currentLevel);
                 spawnEnemyAt(randomCornerSpawn());
                 spawnEnemyAt(randomCornerSpawn());
                 spawnEnemyAt(randomCornerSpawn());
                 spawnEnemyAt(randomCornerSpawn());
                 spawnEnemyAt(randomCornerSpawn());
+                
                 const pursuers = enemyAirplanes.slice(0, 3);
                 pursuers.forEach((e) => {
                     if (!e || !e.userData) return;
@@ -652,7 +695,65 @@ function createClouds() {
                     e.userData.bankLerp = Math.max(e.userData.bankLerp || 0.05, 0.12);
                     e.userData.maxPitch = 0.7;
                 });
-            }).catch(err => console.error('Erro ao iniciar próxima fase:', err));
+                console.log("Total de aviões inimigos criados:", enemyAirplanes.length);
+            }
+            
+            // Garantir que o protótipo do inimigo esteja carregado
+            ensureEnemyPrototype()
+                .then(() => {
+                    // Criar inimigos
+                    createEnemies();
+                    
+                    // Verificar se o pool de caminhões está inicializado
+                    if (!truckPool || !truckBaseModel) {
+                        console.error("Pool de caminhões não inicializado! Tentando reinicializar...");
+                        // Tentar recarregar o modelo do caminhão se necessário
+                        const loader = new GLTFLoader();
+                        loader.load('caminhaoBom.glb', (gltf) => {
+                            console.log("Modelo de caminhão recarregado com sucesso");
+                            truckBaseModel = gltf.scene;
+                            
+                            // Reinicializar o pool de caminhões
+                            truckPool = new ObjectPool(
+                                () => {
+                                    const truck = truckBaseModel.clone();
+                                    truck.scale.set(3, 3, 3);
+                                    truck.userData = {
+                                        health: 10,
+                                        isHit: false,
+                                        truckSpeed: 0.15,
+                                        truckDirection: new THREE.Vector3(),
+                                        truckTurnInterval: 0,
+                                        lastTruckTurnTime: 0,
+                                        truckBoundary: 500
+                                    };
+                                    return truck;
+                                },
+                                (truck) => {
+                                    truck.visible = false;
+                                    if (truck.parent) scene.remove(truck);
+                                    truck.health = 5;
+                                    truck.isHit = false;
+                                    truck.userData.truckSpeed = 0.3;
+                                    truck.userData.truckDirection.set(0, 0, 0);
+                                    truck.userData.truckTurnInterval = 0;
+                                    truck.userData.lastTruckTurnTime = 0;
+                                    truck.userData.truckBoundary = 500;
+                                },
+                                5 // Tamanho inicial do pool
+                            );
+                            
+                            // Criar caminhões após reinicialização
+                            createTrucksForLevel();
+                        });
+                    } else {
+                        // Limpar caminhões antigos
+                        clearTrucks();
+                        // Criar novos caminhões
+                        createTrucksForLevel();
+                    }
+                })
+                .catch(err => console.error('Erro ao iniciar próxima fase:', err));
         }
         if (startNextBtn) startNextBtn.addEventListener('click', startNextLevel);
 
@@ -676,7 +777,8 @@ function createClouds() {
         const clock = new THREE.Clock();
         let airplane;
         let trucks = [];
-        let truckPool; // Declarar truckPool globalmente
+            let truckPool; // Declarar truckPool globalmente
+            let truckBaseModel; // Declarar truckBaseModel globalmente
         let propeller = null; // Variável para armazenar a hélice
         let propellerSpeed = 0.5; // Velocidade inicial da hélice
         const cameraOffset = new THREE.Vector3(0, 0.8, -2); // Offset da câmera em relação ao avião ajustado para primeira pessoa
@@ -1327,7 +1429,12 @@ function createClouds() {
             for (const currentTruck of trucks) {
                 const now = performance.now();
                 if (now - currentTruck.userData.lastTruckTurnTime > currentTruck.userData.truckTurnInterval) {
-                    currentTruck.userData.truckDirection.set(Math.random() * 2 - 1, 0, Math.random() * 2 - 1).normalize();
+                    const currentDirection = currentTruck.userData.truckDirection.clone();
+                    const maxTurnAngle = 25 * Math.PI / 180; // 25 graus em radianos
+                    const randomAngle = (Math.random() * 2 - 1) * maxTurnAngle; // Ângulo entre -maxTurnAngle e +maxTurnAngle
+                    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), randomAngle);
+                    currentDirection.applyQuaternion(rotationQuaternion);
+                    currentTruck.userData.truckDirection.copy(currentDirection.normalize());
                     currentTruck.userData.lastTruckTurnTime = now;
                     currentTruck.userData.truckTurnInterval = 5000 + Math.random() * 5000; // Longer interval for less frequent turns (5-10 seconds)
                 }
@@ -1937,7 +2044,7 @@ function createClouds() {
                     const truckWorldPos = new THREE.Vector3();
                     currentTruck.getWorldPosition(truckWorldPos);
                     const distanceToTruck = bulletWorldPos.distanceTo(truckWorldPos);
-                    const truckCollisionRadius = 10; // Ajuste conforme o tamanho do caminhão
+                    const truckCollisionRadius = 4; // Ajuste conforme o tamanho do caminhão
 
                     if (distanceToTruck < truckCollisionRadius) {
                         currentTruck.userData.health--;
