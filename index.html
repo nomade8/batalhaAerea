@@ -34,7 +34,7 @@
             left: 50%;
             width: 20px;
             height: 20px;
-            margin-top: -135px; /* Metade da altura */
+            margin-top: -120px; /* Metade da altura */
             margin-left: -10px; /* Metade da largura */
             border: 1px solid white;
             border-radius: 50%;
@@ -518,7 +518,7 @@ function createClouds() {
                     (truck) => {
                         truck.visible = false;
                         if (truck.parent) scene.remove(truck);
-                        truck.health = 10;
+                        truck.health = 5;
                         truck.isHit = false;
                         truck.userData.truckSpeed = 0.3;
                         truck.userData.truckDirection.set(0, 0, 0);
@@ -719,7 +719,7 @@ function createClouds() {
                                     const truck = truckBaseModel.clone();
                                     truck.scale.set(3, 3, 3);
                                     truck.userData = {
-                                        health: 10,
+                                        health: 5,
                                         isHit: false,
                                         truckSpeed: 0.15,
                                         truckDirection: new THREE.Vector3(),
@@ -1197,7 +1197,7 @@ function createClouds() {
         }
 
         // Explosão aprimorada no chão (múltiplos puffs + onda de choque)
-        function createGroundExplosion(position) {
+        function createGroundExplosion(position, scale = 2) {
             if (explosionSound.isPlaying) {
                 explosionSound.stop();
             }
@@ -1209,7 +1209,7 @@ function createClouds() {
 
             // múltiplos puffs com offsets
             for (let i = 0; i < 5; i++) {
-                const size = 1.2 + Math.random() * 1.5;
+                const size = (1.2 + Math.random() * 1.5) * scale;
                 const geo = new THREE.SphereGeometry(size, 16, 16);
                 const mat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 1 });
                 const puff = new THREE.Mesh(geo, mat);
@@ -1219,7 +1219,7 @@ function createClouds() {
                     (Math.random() - 0.5) * 3
                 );
                 puff.position.copy(base).add(offset);
-                puff.userData = { birth: performance.now(), duration: 1200 };
+                puff.userData = { birth: performance.now(), duration: 1500 };
                 scene.add(puff);
                 explosions.push(puff);
             }
@@ -1447,13 +1447,40 @@ function createClouds() {
                 currentTruck.position.y = -4;
 
                 // Boundary check
-                if (currentTruck.position.x > currentTruck.userData.truckBoundary || currentTruck.position.x < -currentTruck.userData.truckBoundary) {
-                    currentTruck.userData.truckDirection.x *= -1;
-                    currentTruck.position.x = Math.sign(currentTruck.position.x) * currentTruck.userData.truckBoundary;
+                const boundary = currentTruck.userData.truckBoundary;
+                const currentDirection = currentTruck.userData.truckDirection;
+                const bounceAngleRange = Math.PI / 8; // 22.5 graus
+
+                if (currentTruck.position.x > boundary) {
+                    const normal = new THREE.Vector3(-1, 0, 0);
+                    currentDirection.reflect(normal);
+                    const randomRotation = (Math.random() * 2 - 1) * bounceAngleRange; // -22.5 to +22.5 degrees
+                    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), randomRotation);
+                    currentDirection.applyQuaternion(rotationQuaternion).normalize();
+                    currentTruck.position.x = boundary; // Reposiciona para o limite para evitar que saia
+                } else if (currentTruck.position.x < -boundary) {
+                    const normal = new THREE.Vector3(1, 0, 0);
+                    currentDirection.reflect(normal);
+                    const randomRotation = (Math.random() * 2 - 1) * bounceAngleRange;
+                    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), randomRotation);
+                    currentDirection.applyQuaternion(rotationQuaternion).normalize();
+                    currentTruck.position.x = -boundary;
                 }
-                if (currentTruck.position.z > currentTruck.userData.truckBoundary || currentTruck.position.z < -currentTruck.userData.truckBoundary) {
-                    currentTruck.userData.truckDirection.z *= -1;
-                    currentTruck.position.z = Math.sign(currentTruck.position.z) * currentTruck.userData.truckBoundary;
+
+                if (currentTruck.position.z > boundary) {
+                    const normal = new THREE.Vector3(0, 0, -1);
+                    currentDirection.reflect(normal);
+                    const randomRotation = (Math.random() * 2 - 1) * bounceAngleRange;
+                    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), randomRotation);
+                    currentDirection.applyQuaternion(rotationQuaternion).normalize();
+                    currentTruck.position.z = boundary;
+                } else if (currentTruck.position.z < -boundary) {
+                    const normal = new THREE.Vector3(0, 0, 1);
+                    currentDirection.reflect(normal);
+                    const randomRotation = (Math.random() * 2 - 1) * bounceAngleRange;
+                    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), randomRotation);
+                    currentDirection.applyQuaternion(rotationQuaternion).normalize();
+                    currentTruck.position.z = -boundary;
                 }
 
                 // Make the truck face its direction of movement (Z-axis is front)
@@ -2056,7 +2083,7 @@ function createClouds() {
 
                         if (currentTruck && currentTruck.userData.health <= 0) {
                             
-                            createGroundExplosion(currentTruck.position, truckExplosionScale); // Garante que a explosão seja criada antes de liberar o caminhão
+                            createGroundExplosion(currentTruck.position, truckExplosionScale ); // Garante que a explosão seja criada antes de liberar o caminhão
                             truckPool.release(currentTruck); // Libera o caminhão de volta para o pool
                             trucks.splice(k, 1); // Remove o caminhão destruído do array de caminhões ativos
                         }
