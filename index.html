@@ -510,7 +510,7 @@ function createClouds() {
                         const truck = truckBaseModel.clone();
                         truck.scale.set(3, 3, 3);
                         truck.userData = {
-                            health: 10,
+                            health: 5,
                             isHit: false,
                             truckSpeed: 0.2,
                             truckDirection: new THREE.Vector3(),
@@ -834,7 +834,7 @@ function createClouds() {
         }
 
         // Geometria e Material para os projéteis
-        const bulletGeometry = new THREE.SphereGeometry(0.2, 12, 12); // maior para fácil visualização
+        const bulletGeometry = new THREE.SphereGeometry(0.3, 12, 12); // maior para fácil visualização
         const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Vermelho para visibilidade (jogador)
 
         const bullets = []; // Array para armazenar os projéteis ativos do jogador
