@@ -188,6 +188,11 @@
         const explosionSound = new THREE.Audio(listener);
         const playerShotSound = new THREE.Audio(listener);
         const engineSound = new THREE.Audio(listener);
+        const ENGINE_PITCH_MIN = 0.6;
+        const ENGINE_PITCH_CRUISE = 1.0; // 400 km/h
+        const ENGINE_PITCH_MAX = 1.5;
+        const CRUISE_SPEED_KMH = 400;
+        const MAX_SPEED_KMH = 1000; // equivalente a planeState.speed = -100
 
         audioLoader.load('explosion_realistic.mp3', function(buffer) {
             explosionSound.setBuffer(buffer);
@@ -1273,6 +1278,27 @@ function createClouds() {
             wasGrounded: false,
         };
 
+        function updateEnginePitch(delta) {
+            if (!engineSound || !engineSound.buffer) return;
+
+            const currentKmh = Math.max(0, -planeState.speed * 10);
+            let targetPitch;
+
+            // Mapeamento em duas faixas para manter 1.0 exatamente em 400 km/h.
+            if (currentKmh <= CRUISE_SPEED_KMH) {
+                const tLow = THREE.MathUtils.clamp(currentKmh / CRUISE_SPEED_KMH, 0, 1);
+                targetPitch = THREE.MathUtils.lerp(ENGINE_PITCH_MIN, ENGINE_PITCH_CRUISE, tLow);
+            } else {
+                const tHigh = THREE.MathUtils.clamp((currentKmh - CRUISE_SPEED_KMH) / (MAX_SPEED_KMH - CRUISE_SPEED_KMH), 0, 1);
+                targetPitch = THREE.MathUtils.lerp(ENGINE_PITCH_CRUISE, ENGINE_PITCH_MAX, tHigh);
+            }
+
+            const currentPitch = engineSound.playbackRate ?? ENGINE_PITCH_CRUISE;
+            const smoothFactor = THREE.MathUtils.clamp(delta * 6, 0, 1);
+            const smoothedPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, smoothFactor);
+            engineSound.setPlaybackRate(THREE.MathUtils.clamp(smoothedPitch, ENGINE_PITCH_MIN, ENGINE_PITCH_MAX));
+        }
+
         // Variáveis para controle de câmera (OrbitControls não será usado, mas manteremos a estrutura para referência)
         const controls = {
             manualControl: false, // Indica se o controle manual da câmera está ativo
@@ -1327,15 +1353,18 @@ function createClouds() {
             const minSpeed = 0;  // Limite de velocidade mínima
             const lerpFactorSpeed = 0.002; // Fator de interpolação para velocidade (ajustado para uma resposta mais suave)
 
-            // Detecta se o avião está no solo usando a altura do terreno
+            // Detecta se o avião está no solo (raycast + clamp da pista)
             const groundY = getGroundHeightAt(airplane.position.x, airplane.position.z);
-            const isGrounded = airplane.position.y <= groundY + 0.3;
+            const isGroundedRay = airplane.position.y <= groundY + 0.3;
+            const isGroundedClamp = airplane.position.y <= -3.5 + 0.05;
+            const isGrounded = isGroundedRay || isGroundedClamp;
 
             if (isGrounded) {
-                // No solo: usar aceleração/frenagem gradual (em vez de LERP) para realismo
+                // No solo: frenagem mais responsiva para reduzir o "amortecimento" ao pousar
                 const groundAccel = 18;   // aceleração no solo (unid/s²)
-                const groundBrake = 440;   // frenagem no solo (unid/s²)
-                const groundDrag = 40;     // arrasto quando sem throttle
+                const currentGroundSpeed = Math.abs(planeState.speed);
+                const groundBrake = 100 + (currentGroundSpeed * 2); // freio progressivo ao segurar C
+                const groundDrag = 3;     // arrasto leve sem frear
 
                 if (planeState.isSpeedingUp) {
                     // Acelerar: tornar speed mais negativo gradualmente até maxSpeed
@@ -1346,6 +1375,8 @@ function createClouds() {
                 } else {
                     // Sem throttle: aplicar leve arrasto no solo
                     planeState.speed = THREE.MathUtils.clamp(planeState.speed + groundDrag * delta, maxSpeed, minSpeed);
+                    // Parada automática suave quando a velocidade residual for muito baixa
+                    if (Math.abs(planeState.speed) < 0.6) planeState.speed = 0;
                 }
             } else {
                 // No ar: manter interpolação suave atual
@@ -1511,11 +1542,12 @@ function createClouds() {
 
             // Controle do som contínuo do avião: toca em loop enquanto velocidade < 0 e não está morto
             if (engineSound && engineSound.buffer) {
-                const shouldPlayEngine = (!planeState.dead && planeState.speed < 0);
+                const shouldPlayEngine = !planeState.dead;
                 if (shouldPlayEngine) {
                     if (!engineSound.isPlaying) {
                         engineSound.play();
                     }
+                    updateEnginePitch(delta);
                 } else {
                     if (engineSound.isPlaying) {
                         engineSound.stop();
