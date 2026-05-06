@@ -1953,8 +1953,8 @@ function createClouds() {
                 airplane.position.add(moveVector);
 
                 // Condição de Stall: se a velocidade for muito baixa, o avião perde altitude
-                if (planeState.speed >= -20) {
-                    airplane.position.y -= 0.01; // Perde altitude
+                if (planeState.speed >= -25) {
+                    airplane.position.y -= 0.015; // Perde altitude
                 }
 
                 // Garante que o avião não passe do chão, a menos que esteja subindo
