@@ -180,6 +180,12 @@
         camera.userData.baseRotation = camera.rotation.clone();
         camera.userData.shake = null;
 
+        const firstPersonPosition = camera.position.clone();
+        const firstPersonRotation = camera.rotation.clone();
+        const thirdPersonPosition = new THREE.Vector3(0, 4, 15);
+        const thirdPersonRotation = new THREE.Euler(-0.2, 0, 0, 'XYZ');
+        let isThirdPerson = false;
+
         // Áudio
         const listener = new THREE.AudioListener();
         camera.add(listener);
@@ -1329,6 +1335,20 @@ function createClouds() {
                     keyStates[event.key] = true;
                     // updatePlaneStateFromKeys(); // Removed: State update now happens in animate loop
                 }
+                
+                // Alternar visão da câmera na tecla 'v'
+                if (event.key === 'v' || event.key === 'V') {
+                    isThirdPerson = !isThirdPerson;
+                    if (isThirdPerson) {
+                        camera.position.copy(thirdPersonPosition);
+                        camera.rotation.copy(thirdPersonRotation);
+                    } else {
+                        camera.position.copy(firstPersonPosition);
+                        camera.rotation.copy(firstPersonRotation);
+                    }
+                    camera.userData.basePosition.copy(camera.position);
+                    camera.userData.baseRotation.copy(camera.rotation);
+                }
             });
 
             document.addEventListener('keyup', (event) => {
@@ -1402,7 +1422,7 @@ function createClouds() {
             // Posições aproximadas das asas relativas ao centro do avião
             const wingSpread = 4;    // afastamento lateral
             const wingForward = 0.5;  // um pouco à frente (modelo usa -Z para frente)
-            const wingHeight = -1.5;    // altura dos tiros (ajustado para levantar)
+            const wingHeight = -0.6;    // altura dos tiros (ajustado para levantar)
 
             const planePos = new THREE.Vector3();
             airplane.getWorldPosition(planePos);
@@ -1436,7 +1456,7 @@ function createClouds() {
         let shooting = false;
         let lastShotTime = 0;
         const shotCooldownMs = 150; // taxa de disparo
-        const convergenceHeightOffset = 34.0; // Ajuste vertical para o ponto de convergência
+        const convergenceHeightOffset = 30.0; // Ajuste vertical para o ponto de convergência
 
         document.addEventListener('keydown', (e) => {
             const isSpace = e.code === 'z' || e.key === ' ' || e.key === 'z';
